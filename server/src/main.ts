@@ -15,7 +15,7 @@ import { createBoss, enqueueScan, MAX_ATTEMPTS, registerScanWorker } from './que
 import { createDbVulnCache } from './osv/cache.js';
 import { createOsvClient } from './osv/client.js';
 import { createPipeline } from './scan/pipeline.js';
-import { createDeterministicSummarizer } from './summarize/deterministic.js';
+import { createSummarizer } from './summarize/select.js';
 import { createScanJobHandler } from './scan/run-scan.js';
 import { APP_VERSION } from './version.js';
 
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
       token: config.GITHUB_TOKEN,
       osv: createOsvClient(),
       cache: createDbVulnCache(db),
-      summarizer: createDeterministicSummarizer(),
+      summarizer: createSummarizer(config, logger),
     });
     const handler = createScanJobHandler({ db, pipeline, logger });
     await registerScanWorker(boss, config.WORKER_CONCURRENCY, handler);
