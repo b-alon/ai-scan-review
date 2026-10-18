@@ -54,13 +54,15 @@ describe('createGitRefResolver', () => {
     expect(opts.env?.GIT_TERMINAL_PROMPT).toBe('0');
   });
 
-  it('asks for both heads and tags for a named ref and adds the auth header', async () => {
+  it('asks for both heads and tags for a named ref and passes the auth header through the environment', async () => {
     const { exec, calls } = fakeExec(`${SHA_A}\trefs/heads/dev\n`);
     const resolver = createGitRefResolver({ exec, token: 'tok' });
     await resolver.resolve(parseGitHubUrl('https://github.com/o/r', 'dev'));
-    const args = calls[0]![1];
-    expect(args.slice(0, 2)).toEqual(['-c', expect.stringContaining('http.extraHeader=Authorization: Basic ')]);
-    expect(args.slice(2)).toEqual(['ls-remote', 'https://github.com/o/r', 'refs/heads/dev', 'refs/tags/dev']);
+    const [, args, opts] = calls[0]!;
+    expect(args).toEqual(['ls-remote', 'https://github.com/o/r', 'refs/heads/dev', 'refs/tags/dev']);
+    expect(opts.env?.GIT_CONFIG_KEY_0).toBe('http.extraHeader');
+    expect(opts.env?.GIT_CONFIG_VALUE_0).toContain('Authorization: Basic ');
+    expect(JSON.stringify(args)).not.toContain('tok');
   });
 
   it('asks for the pull request head ref', async () => {

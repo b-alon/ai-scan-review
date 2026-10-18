@@ -1,5 +1,5 @@
 import { ExecError, type Exec } from './exec.js';
-import { gitAuthArgs, gitEnv } from './git-auth.js';
+import { gitEnv } from './git-auth.js';
 import type { ParsedRepo } from './parse-url.js';
 
 export interface ResolvedRef {
@@ -85,14 +85,14 @@ export function createGitRefResolver(opts: { exec: Exec; token?: string | undefi
         const sha = parsed.ref!.toLowerCase();
         return { commitSha: sha, refResolved: sha };
       }
-      const args = [...gitAuthArgs(opts.token), 'ls-remote'];
+      const args = ['ls-remote'];
       if (parsed.refKind === 'default') args.push('--symref', parsed.repoUrl, 'HEAD');
       else if (parsed.refKind === 'pull') args.push(parsed.repoUrl, parsed.ref!);
       else args.push(parsed.repoUrl, `refs/heads/${parsed.ref}`, `refs/tags/${parsed.ref}`);
 
       let stdout: string;
       try {
-        ({ stdout } = await opts.exec('git', args, { env: gitEnv(), timeoutMs }));
+        ({ stdout } = await opts.exec('git', args, { env: gitEnv(opts.token), timeoutMs }));
       } catch (err) {
         throw mapGitError(err);
       }
