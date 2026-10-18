@@ -35,8 +35,8 @@ Three containers from Compose: `api`, `worker`, `db`.
   to the host, so a local Postgres on 5432 never conflicts.
 - `api` is a Fastify server in TypeScript. It serves the REST API under `/api`,
   the built React UI as static files with an SPA fallback, and the Server-Sent
-  Events stream. It validates input, reads from Postgres, inserts scans and
-  enqueues jobs. It never runs a scan.
+  Events stream. It validates input, resolves refs to commits, reads from Postgres,
+  inserts scans and enqueues jobs. It never fetches code or runs a scan.
 - `worker` runs pg-boss handlers. It claims scan jobs, runs the pipeline,
   writes progress and results, and notifies.
 - A one-shot `migrate` service applies Drizzle migrations before `api` and
@@ -50,11 +50,14 @@ Compose file.
 Request flow:
 
 1. UI posts a repo URL and an optional ref.
-2. api parses it, inserts a `queued` scan, sends a pg-boss job carrying only
-   the scan id, returns 201 with the scan.
+2. api parses it, resolves the ref to a commit SHA with `git ls-remote`
+   (about one second, 10 s timeout), rejects bad input immediately, collapses
+   duplicates of a scan already queued or running for that commit, inserts a
+   `queued` scan with the SHA set, sends a pg-boss job carrying only the scan
+   id, and returns 201 with the scan.
 3. UI navigates to the scan page and opens the SSE stream.
-4. worker picks up the job and runs the stages: resolve, fetch, dependencies,
-   code, summarize. After each transition it updates the scan row, inserts a
+4. worker picks up the job and runs the stages: fetch, dependencies, code,
+   summarize. After each transition it updates the scan row, inserts a
    scan event, and runs `NOTIFY scan_updates` with the scan id, all in one
    transaction.
 5. api's single `LISTEN` connection receives the notification, loads the scan,
@@ -71,7 +74,7 @@ Request flow:
 | Queue | pg-boss | Postgres-backed with `SKIP LOCKED`, retries, backoff, expiry, graceful stop; the Node equivalent of GoodJob; no Redis |
 | ORM | Drizzle | TypeScript schema, generated migrations, no codegen in the Docker build, sits on `pg` so LISTEN shares the pool |
 | Validation | Zod | One schema per boundary; the summary contract is shared by both summarizers |
-| UI | React 18, Vite, React Router, hand-written CSS | Familiar, quick to polish, built once in the Docker image |
+| UI | React 18, Vite, React Router, Mantine | Familiar; Mantine ships Stepper, Timeline, Badge, Table, Accordion and a color scheme toggle, so no hand-written component CSS; built once in the Docker image |
 | Tests | Vitest | Fast, TypeScript-native |
 | Git access | `git` CLI in the image | Resolves any ref, no API rate limits, private repos via token header |
 | Vulnerability data | OSV.dev API | Free, no key, covers npm, PyPI, Go, RubyGems |
@@ -94,12 +97,12 @@ Layout:
       db/                 drizzle schema, migrations, client
       api/                fastify app, routes, sse
       queue/              pg-boss setup, job names, enqueue
-      scan/               pipeline: resolve, fetch, deps, code, summarize, persist
+      scan/               pipeline: fetch, deps, code, summarize, persist
       scan/parsers/       lockfile and manifest parsers
       scan/rules/         code pattern rules
       summarize/          contract (zod), deterministic, claude, select
       compare/            fingerprint diff
-      github/             url parser, git commands
+      github/             url parser, ref resolver, git commands
       osv/                client and cache
     test/                 unit and integration tests, fixtures
   web/
@@ -118,8 +121,8 @@ Scan status: `queued`, `running`, `done`, `failed`.
   retries remain. The scan row records the error so the UI can show
   "retrying".
 
-While `running`, `stage` is one of `resolving`, `fetching`, `dependencies`,
-`code`, `summarizing`, `persisting`.
+While `running`, `stage` is one of `fetching`, `dependencies`, `code`,
+`summarizing`, `persisting`.
 
 Tables (Drizzle schema):
 
@@ -129,7 +132,7 @@ Tables (Drizzle schema):
 - `repo_url` text, normalized `https://github.com/owner/name`
 - `ref_requested` text nullable (what the user asked for)
 - `ref_resolved` text nullable (e.g. `refs/heads/main`, `refs/tags/v1`)
-- `commit_sha` text nullable until resolved
+- `commit_sha` text, resolved at submit time
 - `status` enum, `stage` text nullable
 - `progress_pct` int, `progress_message` text
 - `attempts` int, `max_attempts` int
@@ -187,15 +190,25 @@ validation, 404 for unknown scan, 500 otherwise. All bodies validated with Zod.
 - Explicit `ref` overrides any ref implied by the URL. A ref may be a branch,
   a tag or a 7 to 40 character hex SHA.
 - Non-GitHub hosts are rejected with a clear message.
-- If a scan for the same `repo_url` and `ref_requested` is `queued` or
+- Resolves the ref with `git ls-remote --symref` (10 s timeout). Errors are
+  immediate and specific: 400 for an invalid URL or a ref that does not
+  exist, 404 for a repository that is not found or is private without a
+  token, 502 when GitHub cannot be reached. A SHA input is validated by
+  format only; a SHA that does not exist fails at fetch time.
+- If a scan for the same `repo_url` and `commit_sha` is `queued` or
   `running`, that scan is returned with 200 instead of creating a duplicate.
-- Otherwise inserts the scan, sends the pg-boss job, returns 201 with the scan.
+  A done scan of the same commit does not block a new one: advisories change
+  over time, so rescanning an unchanged commit is meaningful.
+- Otherwise inserts the scan with `commit_sha` and `ref_resolved` set, sends
+  the pg-boss job, returns 201 with the scan.
 
 **GET /api/scans/:id**
 - Always: scan fields, progress, events timeline, warnings.
 - When `done`: `summary`, `findings` sorted by severity then title, and
-  `comparison`: `{ previousScanId, previousSha, new: Finding[], fixed:
-  Finding[], stillOpen: Finding[] }` or null when there is no previous scan.
+  `comparison`: `{ previousScanId, previousSha, sameCommit, new: Finding[],
+  fixed: Finding[], stillOpen: Finding[] }` or null when there is no previous
+  scan. `sameCommit` is true when the previous scan covered the same SHA, so
+  the UI attributes differences to advisory data rather than code changes.
 - `fixed` findings come from the previous scan's rows.
 
 **GET /api/scans?limit=50**
@@ -300,26 +313,30 @@ Each attempt starts by resetting the scan: delete findings for the scan id,
 clear summary and warnings, set `running` and `attempts`. This makes retries
 idempotent.
 
-**resolving** (0 to 10%)
+**Ref resolution happens in the api at submit time**, not in the worker:
 - Parse URL and ref.
 - Branch, tag or default: `git ls-remote --symref <url> <ref>` returns the
   full SHA and the resolved ref name. Default branch uses `HEAD`.
-- SHA input: validated by format and fetched directly in the next stage.
+- SHA input: validated by format and fetched directly by the worker.
 - Private repos: when `GITHUB_TOKEN` is set, pass
   `-c http.extraHeader=Authorization: Basic base64(x-access-token:TOKEN)`.
-  The token never appears in the URL, in logs, or in error messages.
-- Timeout 20 s. "Repository not found" and auth failures are non-retryable
-  and produce the message: "Repository not found or private. Set GITHUB_TOKEN
-  to scan private repositories."
+  The token never appears in the URL, in logs, or in error messages. The
+  worker's fetch uses the same header.
+- Timeout 10 s. "Repository not found" and auth failures produce the
+  message: "Repository not found or private. Set GITHUB_TOKEN to scan private
+  repositories."
+- The resolver is injected into the api so route tests use a fake.
 
-**fetching** (10 to 30%)
+**fetching** (0 to 25%)
 - Temp dir under the OS temp root, named by scan id, removed in `finally`.
 - `git init`, `git remote add origin`, `git fetch --depth 1 origin <sha>`,
   `git checkout --quiet FETCH_HEAD`, with `GIT_LFS_SKIP_SMUDGE=1` and
   `GIT_TERMINAL_PROMPT=0`.
 - Timeout 120 s. Counts files for stats.
+- A SHA that does not exist on the remote is a non-retryable error: "Commit
+  not found in this repository."
 
-**dependencies** (30 to 65%)
+**dependencies** (25 to 60%)
 - Discover manifests up to 3 directories deep, skipping `node_modules`,
   `vendor`, `.git`, `dist`, `build`.
 - Parsers, each a pure function from file text to `{ ecosystem, name,
@@ -344,7 +361,7 @@ idempotent.
   and the scan continues. The summary must say the dependency check did not
   run.
 
-**code** (65 to 85%)
+**code** (60 to 85%)
 - Walk files, skipping `node_modules`, `.git`, `vendor`, `dist`, `build`,
   `.next`, `coverage`, `target`, binaries, and files over 512 KB. Cap 5000
   files.
@@ -375,17 +392,18 @@ idempotent.
 - One transaction: insert findings, update scan with summary, stats,
   `previous_scan_id`, `done`, `finished_at`. Then notify.
 
-Progress messages are specific: "Resolved main to 3f9a2c1", "Fetched 412
-files", "Checked 212 packages against OSV, 7 advisories found", "Scanned 388
-files with 12 rules", "Summarizing with Claude".
+Progress messages are specific: "Fetching owner/repo at 3f9a2c1", "Fetched
+412 files", "Checked 212 packages against OSV, 7 advisories found", "Scanned
+388 files with 12 rules", "Summarizing with Claude".
 
 ## 7. Fault tolerance
 
 - pg-boss job options: `retryLimit: 2`, `retryBackoff: true`,
   `expireInSeconds: 600`. A worker that dies mid-scan leaves a job that
   expires and is retried by another worker.
-- Error classes: `NonRetryableScanError` (bad URL, repo not found, auth,
-  invalid ref) marks the scan `failed` immediately and completes the job.
+- Error classes: `NonRetryableScanError` (commit not found, repository gone
+  or access revoked between submit and fetch) marks the scan `failed`
+  immediately and completes the job.
   Anything else marks the scan `queued` with the error noted and rethrows so
   pg-boss retries. On the final attempt the handler marks the scan `failed`
   with the error.
@@ -402,12 +420,14 @@ files with 12 rules", "Summarizing with Claude".
   dir cleanup.
 - Secrets: the GitHub token is never logged or embedded in URLs; evidence is
   masked before it is stored; pino redacts `authorization` headers.
-- Duplicate submissions are collapsed at the API.
+- Duplicate submissions for the same commit are collapsed at the API while a
+  scan for it is in flight.
 
 ## 8. UI
 
-React, Vite, React Router, hand-written CSS with design tokens, light and dark
-via `prefers-color-scheme`, no component library. All copy is plain language.
+React, Vite, React Router and Mantine for components, layout and the light
+and dark color scheme. No custom component CSS beyond theme tokens. All copy
+is plain language.
 
 Routes:
 
@@ -415,8 +435,8 @@ Routes:
   commit" input, and a Scan button. Below it, recent scans grouped by repo
   with status pill, risk badge, short SHA and relative time. Empty state
   suggests the demo repo.
-- `/scans/:id` Scan. While not terminal: a five-step stepper (Resolve,
-  Fetch, Dependencies, Code, Summarize, where the last step covers both the
+- `/scans/:id` Scan. While not terminal: a four-step stepper (Fetch,
+  Dependencies, Code, Summarize, where the last step covers both the
   summarizing and persisting stages) with the active step animated, the
   live progress message, elapsed time, and a timeline of completed steps with
   durations. On `failed`: an error card with the reason and a "Scan again"
@@ -436,7 +456,9 @@ Result view, top to bottom:
    findings each action resolves; expanding an action lists them.
 5. Since previous scan: shown only when a previous scan exists. Counts of
    fixed, new, still open, with expandable lists, and a link to the previous
-   result.
+   result. When `sameCommit` is true the title reads "Same commit as your
+   previous scan, {time ago}" and a note says differences come from updated
+   advisory data, not code changes.
 6. All findings: table with severity and category filters; rows expand to
    description, evidence, reference link, recommendation.
 
@@ -454,8 +476,8 @@ Vitest in `server/` and `web/`. Three layers:
   client covering schema success, unknown fingerprints dropped, and fallback
   on error.
 - Integration, requires `DATABASE_URL` (the dev Compose database): Drizzle
-  repository functions; API routes through `fastify.inject`, including SSE
-  snapshot and terminal events; the full worker handler with a fake git
+  repository functions; API routes through `fastify.inject` with a fake ref
+  resolver, including SSE snapshot and terminal events; the full worker handler with a fake git
   fetcher pointing at a fixture directory and a fake OSV client, covering
   success, retryable failure then success, and non-retryable failure.
 - Smoke, `npm run smoke`: against a running stack, submits the demo repo at
@@ -518,8 +540,8 @@ Environment, validated by Zod at startup with clear errors:
 1. Scaffold: workspaces, TypeScript, Drizzle schema and first migration,
    Compose with db, migrate, api, worker. `docker compose up` serves a health
    endpoint.
-2. Core flow with a fake pipeline: create, read, list, SSE, pg-boss handler
-   that walks the stages with delays. UI submit, progress, and a placeholder
+2. Core flow with a fake pipeline: create with real ref resolution, read,
+   list, SSE, pg-boss handler that walks the stages with delays. UI submit, progress, and a placeholder
    result. End-to-end in Docker.
 3. Real pipeline: git resolve and fetch, manifest parsers, OSV client and
    cache, code rules, deterministic summarizer, persist.
