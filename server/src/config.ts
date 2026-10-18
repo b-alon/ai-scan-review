@@ -3,7 +3,7 @@ import { z } from 'zod';
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1, 'is required'),
   ROLE: z.enum(['api', 'worker', 'all']).default('all'),
-  PORT: z.coerce.number().int().positive().default(8080),
+  PORT: z.coerce.number().int().positive().default(8787),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-5-5'),
   GITHUB_TOKEN: z.string().optional(),

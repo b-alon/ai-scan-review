@@ -7,7 +7,7 @@ describe('loadConfig', () => {
   it('applies defaults', () => {
     const c = loadConfig(base);
     expect(c.ROLE).toBe('all');
-    expect(c.PORT).toBe(8080);
+    expect(c.PORT).toBe(8787);
     expect(c.WORKER_CONCURRENCY).toBe(2);
     expect(c.SCAN_FRESHNESS_MINUTES).toBe(10);
     expect(c.ANTHROPIC_MODEL).toBe('claude-opus-5-5');
@@ -19,7 +19,7 @@ describe('loadConfig', () => {
     const c = loadConfig({ ...base, ANTHROPIC_API_KEY: '', GITHUB_TOKEN: '   ', PORT: '' });
     expect(c.ANTHROPIC_API_KEY).toBeUndefined();
     expect(c.GITHUB_TOKEN).toBeUndefined();
-    expect(c.PORT).toBe(8080);
+    expect(c.PORT).toBe(8787);
   });
 
   it('switches summarizer mode on when a key is present', () => {
