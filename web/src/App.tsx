@@ -1,6 +1,7 @@
 import { Anchor, AppShell, Container, Group, MantineProvider, Title } from '@mantine/core';
 import { BrowserRouter, Link, Route, Routes } from 'react-router';
 import { HomePage } from './pages/HomePage';
+import { RepoHistoryPage } from './pages/RepoHistoryPage';
 import { ScanPage } from './pages/ScanPage';
 
 export function App() {
@@ -20,6 +21,7 @@ export function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/scans/:id" element={<ScanPage />} />
+                <Route path="/repos/:owner/:name" element={<RepoHistoryPage />} />
               </Routes>
             </Container>
           </AppShell.Main>

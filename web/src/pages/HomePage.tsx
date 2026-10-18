@@ -1,6 +1,6 @@
-import { Alert, Button, Divider, Group, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Anchor, Button, Divider, Group, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api } from '../api';
 import { ScanListItemRow } from '../components/ScanListItemRow';
 import type { ScanListItem } from '../types';
@@ -68,16 +68,27 @@ export function HomePage() {
         </form>
       </Paper>
       {recent.length > 0 && (
-        <Stack gap="xs">
+        <Stack gap="md">
           <Title order={4}>Recent scans</Title>
-          <Paper withBorder px="md" radius="md">
-            {recent.map((item, i) => (
-              <div key={item.id}>
-                {i > 0 && <Divider />}
-                <ScanListItemRow item={item} />
-              </div>
-            ))}
-          </Paper>
+          {Object.entries(
+            recent.reduce<Record<string, ScanListItem[]>>((acc, item) => {
+              const key = `${item.repoOwner}/${item.repoName}`;
+              (acc[key] ??= []).push(item);
+              return acc;
+            }, {}),
+          ).map(([repo, items]) => (
+            <Paper key={repo} withBorder px="md" py="xs" radius="md">
+              <Anchor component={Link} to={`/repos/${repo}`} fw={600}>
+                {repo}
+              </Anchor>
+              {items.map((item) => (
+                <div key={item.id}>
+                  <Divider />
+                  <ScanListItemRow item={item} showRepo={false} />
+                </div>
+              ))}
+            </Paper>
+          ))}
         </Stack>
       )}
     </Stack>

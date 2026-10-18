@@ -1,9 +1,10 @@
-import { Alert, Anchor, Badge, Button, Group, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Group, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { api } from '../api';
 import { ReusedBanner } from '../components/ReusedBanner';
 import { ScanProgress } from '../components/ScanProgress';
+import { ScanResult } from '../components/ScanResult';
 import { useScanStream } from '../hooks/useScanStream';
 import { shortSha, timeAgo } from '../lib/format';
 import type { ReusedReason, ScanView } from '../types';
@@ -29,20 +30,6 @@ function ScanHeader({ view }: { view: ScanView }) {
         </Group>
       </Stack>
     </Group>
-  );
-}
-
-function ScanResultBasic({ view }: { view: ScanView }) {
-  return (
-    <Paper withBorder p="lg" radius="md">
-      <Stack gap="xs">
-        <Title order={3}>{view.summary?.headline}</Title>
-        <Text>{view.summary?.overview}</Text>
-        <Text c="dimmed" size="sm">
-          {view.findings?.length ?? 0} findings
-        </Text>
-      </Stack>
-    </Paper>
   );
 }
 
@@ -82,7 +69,7 @@ export function ScanPage() {
         </Alert>
       )}
       {(view.status === 'queued' || view.status === 'running') && <ScanProgress view={view} />}
-      {view.status === 'done' && <ScanResultBasic view={view} />}
+      {view.status === 'done' && <ScanResult view={view} />}
     </Stack>
   );
 }
