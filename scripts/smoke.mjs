@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Smoke test against a running stack: scans the demo repo at v1 then v2 and checks the comparison.
 const base = process.env.SMOKE_BASE_URL ?? 'http://localhost:8787';
-const repo = process.env.SMOKE_REPO ?? 'https://github.com/alonbrt/scan-review-demo';
+const repo = process.env.SMOKE_REPO ?? 'https://github.com/b-alon/scan-review-demo';
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 180_000);
 
 async function json(url, init) {

@@ -16,8 +16,8 @@ Open <http://localhost:8787>. The first run builds the image and pulls Postgres,
 
 ## Try it
 
-1. Scan `https://github.com/alonbrt/scan-review-demo/tree/v1`. It has two vulnerable dependencies, a hardcoded AWS example key and an `eval` call. Watch the four stages run, then read the result.
-2. Scan `https://github.com/alonbrt/scan-review-demo/tree/v2`, where all of that is fixed. The result now has a "Since previous scan" section listing what was fixed.
+1. Scan `https://github.com/b-alon/scan-review-demo/tree/v1`. It has two vulnerable dependencies, a hardcoded AWS example key and an `eval` call. Watch the four stages run, then read the result.
+2. Scan `https://github.com/b-alon/scan-review-demo/tree/v2`, where all of that is fixed. The result now has a "Since previous scan" section listing what was fixed.
 3. Scan anything else, for example `https://github.com/expressjs/express/tree/4.17.1`. A branch, tag, commit or pull request URL all work, and the "Branch, tag or commit" field overrides whatever the URL implies.
 
 ### Enabling the AI summary
