@@ -189,7 +189,9 @@ validation, 404 for unknown scan, 500 otherwise. All bodies validated with Zod.
   `/releases/tag/<tag>`; `/commit/<sha>`; `/pull/<n>` (maps to
   `refs/pull/<n>/head`).
 - Explicit `ref` overrides any ref implied by the URL. A ref may be a branch,
-  a tag or a 7 to 40 character hex SHA.
+  a tag or a full 40 character commit SHA. Abbreviated SHAs are rejected with
+  a message asking for the full one, since git cannot fetch by an abbreviated
+  hash.
 - Non-GitHub hosts are rejected with a clear message.
 - Resolves the ref with `git ls-remote --symref` (10 s timeout). Errors are
   immediate and specific: 400 for an invalid URL or a ref that does not
