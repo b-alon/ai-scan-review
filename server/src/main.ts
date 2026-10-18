@@ -8,9 +8,11 @@ import { registerScanRoutes } from './api/routes/scans.js';
 import { registerStreamRoute } from './api/routes/stream.js';
 import { loadConfig } from './config.js';
 import { createDb, createPool } from './db/client.js';
+import { countQueued } from './db/scans-repo.js';
 import { realExec } from './github/exec.js';
 import { createGitRefResolver } from './github/resolve-ref.js';
 import { createLogger } from './logger.js';
+import { metrics, registerMetricsRoute } from './metrics.js';
 import { createBoss, enqueueScan, MAX_ATTEMPTS, registerScanWorker } from './queue/boss.js';
 import { createDbVulnCache } from './osv/cache.js';
 import { createOsvClient } from './osv/client.js';
@@ -29,7 +31,9 @@ async function main(): Promise<void> {
   const runsApi = config.ROLE !== 'worker';
   const runsWorker = config.ROLE !== 'api';
 
+  let bossStarted = false;
   const boss = await createBoss(config.DATABASE_URL, logger);
+  bossStarted = true;
   const notifier = runsApi ? createScanNotifier(config.DATABASE_URL, logger) : null;
   if (notifier) await notifier.start();
 
@@ -45,8 +49,9 @@ async function main(): Promise<void> {
           checkDb: async () => {
             await db.execute(sql`select 1 from scans limit 1`);
           },
-          isQueueReady: () => true,
+          isQueueReady: () => bossStarted,
         }),
+      registerMetricsRoute,
       ...(runsApi && notifier
         ? [
             (a: Parameters<typeof registerScanRoutes>[0]) =>
@@ -66,11 +71,18 @@ async function main(): Promise<void> {
     ],
   });
 
+  let sampler: ReturnType<typeof setInterval> | null = null;
   if (runsWorker) {
+    sampler = setInterval(() => {
+      countQueued(db)
+        .then((n) => metrics.scanQueueDepth.set(n))
+        .catch((err: unknown) => logger.warn({ err }, 'queue depth sample failed'));
+    }, 10_000);
+    sampler.unref();
     const pipeline = createPipeline({
       exec: realExec,
       token: config.GITHUB_TOKEN,
-      osv: createOsvClient(),
+      osv: createOsvClient({ onRequest: (outcome) => metrics.osvRequestsTotal.inc({ outcome }) }),
       cache: createDbVulnCache(db),
       summarizer: createSummarizer(config, logger),
     });
@@ -86,6 +98,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     logger.info({ signal }, 'shutting down');
+    if (sampler) clearInterval(sampler);
     try {
       await boss.stop({ graceful: true, timeout: 30_000 });
       await app.close();
