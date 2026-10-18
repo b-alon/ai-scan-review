@@ -1,3 +1,4 @@
+import { diffFindings } from '../compare/diff.js';
 import type { Queryable } from '../db/client.js';
 import { countFindingsBySeverity, getScan, listEvents, listFindings, listScans, type SeverityCounts } from '../db/scans-repo.js';
 import type { FindingRow, ScanRow } from '../db/schema.js';
@@ -68,6 +69,15 @@ export function toFinding(row: FindingRow): Finding {
   return rest;
 }
 
+export async function buildComparison(q: Queryable, scan: ScanRow, current: Finding[]): Promise<Comparison | null> {
+  if (!scan.previousScanId) return null;
+  const previous = await getScan(q, scan.previousScanId);
+  if (!previous) return null;
+  const previousFindings = (await listFindings(q, previous.id)).map(toFinding);
+  const diff = diffFindings(current, previousFindings);
+  return { previousScanId: previous.id, previousSha: previous.commitSha, sameCommit: previous.commitSha === scan.commitSha, ...diff };
+}
+
 export async function loadScanView(q: Queryable, id: string): Promise<ScanView | undefined> {
   const scan = await getScan(q, id);
   if (!scan) return undefined;
@@ -99,7 +109,7 @@ export async function loadScanView(q: Queryable, id: string): Promise<ScanView |
     finishedAt: scan.finishedAt?.toISOString() ?? null,
     events: events.map((e) => ({ stage: e.stage, message: e.message, createdAt: e.createdAt.toISOString() })),
     findings: findingsList,
-    comparison: null,
+    comparison: findingsList ? await buildComparison(q, scan, findingsList) : null,
   };
 }
 
