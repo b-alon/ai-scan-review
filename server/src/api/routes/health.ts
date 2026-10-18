@@ -22,7 +22,8 @@ export function registerHealthRoutes(app: FastifyInstance, deps: HealthDeps): vo
       await deps.checkDb();
       checks.db = 'ok';
     } catch (err) {
-      checks.db = err instanceof Error ? err.message : String(err);
+      app.log.warn({ err }, 'readiness: database check failed');
+      checks.db = 'unavailable';
     }
     checks.queue = deps.isQueueReady() ? 'ok' : 'not started';
     const ok = Object.values(checks).every((v) => v === 'ok');

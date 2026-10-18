@@ -3,15 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["server"],
-  "engines": { "node": ">=24" },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "dev": "npm run dev -w server",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
     "dev:db": "docker compose -f compose.yaml -f compose.dev.yaml up -d db",
-    "build": "npm run build -w server",
-    "test": "npm run test -w server",
+    "build": "npm run build -w web && npm run build -w server",
+    "test": "npm run test -w server && npm run test -w web",
     "test:integration": "npm run test:integration -w server",
-    "typecheck": "npm run typecheck -w server",
-    "lint": "npm run lint -w server"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "lint": "npm run lint -w server && npm run lint -w web",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
   }
 }

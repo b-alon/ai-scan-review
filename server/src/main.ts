@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { buildApp } from './api/app.js';
 import { registerHealthRoutes } from './api/routes/health.js';
@@ -5,6 +7,8 @@ import { loadConfig } from './config.js';
 import { createDb, createPool } from './db/client.js';
 import { createLogger } from './logger.js';
 import { APP_VERSION } from './version.js';
+
+const WEB_DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -14,6 +18,7 @@ async function main(): Promise<void> {
 
   const app = await buildApp({
     logger,
+    webDistDir: config.ROLE === 'worker' ? null : WEB_DIST,
     routes: [
       (a) =>
         registerHealthRoutes(a, {

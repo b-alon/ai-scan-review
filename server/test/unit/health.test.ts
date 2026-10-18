@@ -11,6 +11,7 @@ describe('health routes', () => {
   beforeAll(async () => {
     app = await buildApp({
       logger: pino({ level: 'silent' }),
+      webDistDir: null,
       routes: [
         (a) =>
           registerHealthRoutes(a, {
@@ -42,7 +43,8 @@ describe('health routes', () => {
     dbOk = false;
     res = await app.inject({ method: 'GET', url: '/api/ready' });
     expect(res.statusCode).toBe(503);
-    expect(res.json().checks.db).toMatch(/connection refused/);
+    expect(res.json().checks.db).toBe('unavailable');
+    expect(res.body).not.toContain('connection refused');
     dbOk = true;
   });
 

@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { Logger } from '../logger.js';
 import { HttpError, jsonNotFound } from './errors.js';
+import { registerStatic } from './routes/static.js';
 
 export type RoutePlugin = (app: FastifyInstance) => void | Promise<void>;
 
 export interface AppDeps {
   logger: Logger;
   routes: RoutePlugin[];
+  webDistDir: string | null;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -26,6 +28,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   for (const route of deps.routes) await route(app);
-  jsonNotFound(app);
+  if (deps.webDistDir) await registerStatic(app, deps.webDistDir);
+  else jsonNotFound(app);
   return app;
 }
