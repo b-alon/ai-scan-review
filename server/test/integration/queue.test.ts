@@ -11,6 +11,7 @@ describe.skipIf(!TEST_DATABASE_URL)('queue', () => {
 
   beforeAll(async () => {
     boss = await createBoss(TEST_DATABASE_URL!, pino({ level: 'silent' }), { testSpies: true });
+    await boss.deleteAllJobs(SCAN_QUEUE);
     await registerScanWorker(boss, 1, async (job: ScanJob) => {
       seen.push({ scanId: job.data.scanId, retryCount: job.retryCount, retryLimit: job.retryLimit });
       if (job.data.scanId === 'flaky' && flakyFailures === 0) {
