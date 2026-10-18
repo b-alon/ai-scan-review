@@ -18,6 +18,20 @@ export function maskValue(value: string): string {
   return value.length <= 4 ? '****' : `${value.slice(0, 4)}****`;
 }
 
+const SECRET_PATTERNS = RULES.filter((r) => r.secret).map((r) => new RegExp(r.pattern.source, r.pattern.flags.includes('g') ? r.pattern.flags : `${r.pattern.flags}g`));
+
+/** Masks every secret-shaped value in a line, whichever rule produced the finding. */
+export function redactSecrets(line: string): string {
+  let out = line;
+  for (const pattern of SECRET_PATTERNS) {
+    out = out.replace(pattern, (match: string, group?: string) => {
+      const value = typeof group === 'string' ? group : match;
+      return match.replace(value, maskValue(value));
+    });
+  }
+  return out;
+}
+
 export function extensionOf(relPath: string): string {
   const base = relPath.split('/').pop() ?? '';
   const i = base.lastIndexOf('.');
@@ -46,7 +60,7 @@ export function scanText(relPath: string, text: string, rules: Rule[] = RULES): 
       if (seen.has(fingerprint)) continue;
       seen.add(fingerprint);
       const location = `${relPath}:${i + 1}`;
-      const evidence = (rule.secret ? line.replace(value, maskValue(value)) : line).trim().slice(0, 200);
+      const evidence = redactSecrets(line).trim().slice(0, 200);
       out.push({
         fingerprint,
         category: rule.category,

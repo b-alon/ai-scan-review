@@ -54,6 +54,16 @@ describe('rules', () => {
     expect(a.metadata).toMatchObject({ line: 1, path: 'a.js' });
   });
 
+  it('masks secrets that share a line with a non-secret finding', () => {
+    const findings = scanText('a.js', 'eval(x); const key = "AKIAIOSFODNN7EXAMPLE"; const password = "hunter2hunter2";');
+    const ids = findings.map((f) => f.ruleId).sort();
+    expect(ids).toEqual(['code.eval', 'secret.aws_access_key']);
+    for (const f of findings) {
+      expect(f.evidence).not.toContain('IOSFODNN7EXAMPLE');
+      expect(f.evidence).not.toContain('hunter2hunter2');
+    }
+  });
+
   it('helpers behave', () => {
     expect(maskValue('AKIAIOSFODNN7EXAMPLE')).toBe('AKIA****');
     expect(maskValue('ab')).toBe('****');

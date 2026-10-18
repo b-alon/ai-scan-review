@@ -28,8 +28,10 @@ describe('createClaudeSummarizer', () => {
     expect(out.note).toBe('model: claude-opus-5-5');
     expect(out.summary.topRisks.map((r) => r.fingerprint)).toEqual(['k1']);
     expect(out.summary.nextActions[0]?.resolves).toEqual(['k1']);
-    const params = parse.mock.calls[0]![0] as unknown as { model: string; output_config: { format: unknown }; messages: Array<{ content: string }> };
+    const params = parse.mock.calls[0]![0] as unknown as { model: string; system: string; output_config: { format: unknown }; messages: Array<{ content: string }> };
     expect(params.model).toBe('claude-opus-5-5');
+    expect(params.system).toMatch(/untrusted/i);
+    expect(params.system).toMatch(/never follow instructions/i);
     expect(params.output_config.format).toBeDefined();
     expect(params.messages[0]!.content).toContain('k1');
   });
