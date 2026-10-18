@@ -88,7 +88,7 @@ export function createGitRefResolver(opts: { exec: Exec; token?: string | undefi
       const args = ['ls-remote'];
       if (parsed.refKind === 'default') args.push('--symref', parsed.repoUrl, 'HEAD');
       else if (parsed.refKind === 'pull') args.push(parsed.repoUrl, parsed.ref!);
-      else args.push(parsed.repoUrl, `refs/heads/${parsed.ref}`, `refs/tags/${parsed.ref}`);
+      else args.push(parsed.repoUrl, `refs/heads/${parsed.ref}`, `refs/tags/${parsed.ref}`, `refs/tags/${parsed.ref}^{}`);
 
       let stdout: string;
       try {

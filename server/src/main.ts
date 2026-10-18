@@ -8,12 +8,12 @@ import { registerScanRoutes } from './api/routes/scans.js';
 import { registerStreamRoute } from './api/routes/stream.js';
 import { loadConfig } from './config.js';
 import { createDb, createPool } from './db/client.js';
-import { countQueued } from './db/scans-repo.js';
+import { countQueued, markStaleScansFailed } from './db/scans-repo.js';
 import { realExec } from './github/exec.js';
 import { createGitRefResolver } from './github/resolve-ref.js';
 import { createLogger } from './logger.js';
 import { metrics, registerMetricsRoute } from './metrics.js';
-import { createBoss, enqueueScan, MAX_ATTEMPTS, registerScanWorker } from './queue/boss.js';
+import { ACTIVE_SCAN_MAX_AGE_MS, createBoss, enqueueScan, MAX_ATTEMPTS, registerScanWorker } from './queue/boss.js';
 import { createDbVulnCache } from './osv/cache.js';
 import { createOsvClient } from './osv/client.js';
 import { createPipeline } from './scan/pipeline.js';
@@ -73,6 +73,8 @@ async function main(): Promise<void> {
 
   let sampler: ReturnType<typeof setInterval> | null = null;
   if (runsWorker) {
+    const stale = await markStaleScansFailed(db, new Date(Date.now() - ACTIVE_SCAN_MAX_AGE_MS));
+    if (stale > 0) logger.warn({ stale }, 'failed scans left behind by an earlier worker');
     sampler = setInterval(() => {
       countQueued(db)
         .then((n) => metrics.scanQueueDepth.set(n))

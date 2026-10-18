@@ -13,7 +13,9 @@ export function sanitizeSummary(summary: Summary, findings: Finding[]): Summary 
     .map((a) => ({ ...a, action: a.action.trim(), resolves: a.resolves.filter((fp) => known.has(fp)) }))
     .filter((a) => a.action.length > 0)
     .slice(0, 20);
-  const riskLevel: RiskLevel = findings.length === 0 ? 'none' : summary.riskLevel === 'none' ? highestSeverity(findings) : summary.riskLevel;
+  const floor = highestSeverity(findings);
+  const order: RiskLevel[] = ['critical', 'high', 'medium', 'low', 'none'];
+  const riskLevel: RiskLevel = findings.length === 0 ? 'none' : order.indexOf(summary.riskLevel) < order.indexOf(floor) ? summary.riskLevel : floor;
   return {
     riskLevel,
     headline: summary.headline.trim().slice(0, 300),

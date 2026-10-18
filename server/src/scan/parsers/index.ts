@@ -20,5 +20,7 @@ export function parseManifest(kind: ManifestKind, text: string): PackageRef[] {
       return parseGoMod(text);
     case 'gemfile-lock':
       return parseGemfileLock(text);
+    case 'lock-marker':
+      return [];
   }
 }

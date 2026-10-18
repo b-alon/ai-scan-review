@@ -35,7 +35,7 @@ function noLockfileFinding(relPath: string): Finding {
     title: `No lockfile next to ${relPath}`,
     description:
       'Without a lockfile the installed dependency versions are not reproducible, and only exactly pinned versions could be checked for advisories.',
-    recommendation: 'Commit a lockfile (package-lock.json) so dependency versions are reproducible and scannable.',
+    recommendation: 'Commit a lockfile (package-lock.json, yarn.lock or pnpm-lock.yaml) so dependency versions are reproducible and scannable.',
     location: relPath,
     referenceId: null,
     referenceUrl: null,
@@ -57,13 +57,17 @@ export async function runDependencyStage(opts: DependencyStageOptions): Promise<
     return { findings, warnings, packages: 0, advisories: 0 };
   }
 
-  const lockDirs = new Set(manifests.filter((m) => m.kind === 'package-lock').map((m) => path.posix.dirname(m.relPath)));
+  // A parsed lockfile replaces package.json; an unparsed one (yarn, pnpm) only proves versions are pinned.
+  const parsedLockDirs = new Set(manifests.filter((m) => m.kind === 'package-lock').map((m) => path.posix.dirname(m.relPath)));
+  const markerLockDirs = new Set(manifests.filter((m) => m.kind === 'lock-marker').map((m) => path.posix.dirname(m.relPath)));
   const packages = new Map<string, PackageInManifest>();
 
   for (const manifest of manifests) {
+    if (manifest.kind === 'lock-marker') continue;
     if (manifest.kind === 'package-json') {
-      if (lockDirs.has(path.posix.dirname(manifest.relPath))) continue;
-      findings.push(noLockfileFinding(manifest.relPath));
+      const dir = path.posix.dirname(manifest.relPath);
+      if (parsedLockDirs.has(dir)) continue;
+      if (!markerLockDirs.has(dir)) findings.push(noLockfileFinding(manifest.relPath));
     }
     let text: string;
     try {
@@ -93,7 +97,13 @@ export async function runDependencyStage(opts: DependencyStageOptions): Promise<
   if (list.length === 0) return { findings, warnings, packages: 0, advisories: 0 };
 
   try {
-    const result = await fetchAdvisories({ osv: opts.osv, cache: opts.cache, packages: list, signal: opts.signal });
+    const result = await fetchAdvisories({
+      osv: opts.osv,
+      cache: opts.cache,
+      packages: list,
+      signal: opts.signal,
+      onSkipped: (id, err) => opts.log.warn({ err, advisory: id }, 'advisory details unavailable, skipped'),
+    });
     findings.push(...result.findings);
     await opts.progress(60, `Checked ${list.length} packages against OSV, ${result.findings.length} advisories found`);
     return { findings, warnings, packages: list.length, advisories: result.findings.length };

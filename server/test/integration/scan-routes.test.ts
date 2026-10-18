@@ -27,6 +27,7 @@ describe.skipIf(!TEST_DATABASE_URL)('scan routes', () => {
   let app: FastifyInstance;
   const enqueued: string[] = [];
   let summarizerMode: 'claude' | 'deterministic' = 'deterministic';
+  let enqueueFails = false;
 
   beforeAll(async () => {
     t = await setupTestDb();
@@ -39,6 +40,7 @@ describe.skipIf(!TEST_DATABASE_URL)('scan routes', () => {
             db: t.db,
             resolver,
             enqueue: async (id) => {
+              if (enqueueFails) throw new Error('queue down');
               enqueued.push(id);
             },
             freshnessMinutes: 10,
@@ -55,6 +57,7 @@ describe.skipIf(!TEST_DATABASE_URL)('scan routes', () => {
     await resetDb(t.db);
     enqueued.length = 0;
     summarizerMode = 'deterministic';
+    enqueueFails = false;
   });
   afterAll(async () => {
     await app.close();
@@ -88,12 +91,26 @@ describe.skipIf(!TEST_DATABASE_URL)('scan routes', () => {
     expect(get.json().events).toEqual([]);
   });
 
-  it('joins an in-flight scan of the same commit', async () => {
+  it('joins an in-flight scan of the same commit unless forced', async () => {
     const first = (await post({ repoUrl: 'https://github.com/a/b' })).json();
     const second = await post({ repoUrl: 'https://github.com/a/b/tree/main' });
     expect(second.statusCode).toBe(200);
     expect(second.json()).toMatchObject({ id: first.id, reused: 'in_progress' });
     expect(enqueued).toHaveLength(1);
+    const forced = await post({ repoUrl: 'https://github.com/a/b', force: true });
+    expect(forced.statusCode).toBe(201);
+    expect(forced.json().id).not.toBe(first.id);
+  });
+
+  it('fails the scan instead of leaving a zombie when the queue rejects the job', async () => {
+    enqueueFails = true;
+    const res = await post({ repoUrl: 'https://github.com/a/b' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error.code).toBe('queue_unavailable');
+    enqueueFails = false;
+    const again = await post({ repoUrl: 'https://github.com/a/b' });
+    expect(again.statusCode).toBe(201);
+    expect(again.json().reused).toBeNull();
   });
 
   it('reuses a recent done scan unless forced or the summarizer differs', async () => {

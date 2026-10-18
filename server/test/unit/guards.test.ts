@@ -24,6 +24,13 @@ describe('sanitizeSummary', () => {
     expect(out.nextActions).toEqual([{ action: 'do it', effort: 'minutes', resolves: ['k0'] }]);
   });
 
+  it('never reports a risk level below the worst finding', () => {
+    const out = sanitizeSummary({ riskLevel: 'low', headline: 'h', overview: 'o', topRisks: [], nextActions: [] }, [f('k0', 'critical'), f('k1', 'low')]);
+    expect(out.riskLevel).toBe('critical');
+    const keep = sanitizeSummary({ riskLevel: 'critical', headline: 'h', overview: 'o', topRisks: [], nextActions: [] }, [f('k1', 'low')]);
+    expect(keep.riskLevel).toBe('critical');
+  });
+
   it('forces none when there are no findings', () => {
     const out = sanitizeSummary({ riskLevel: 'high', headline: 'h', overview: 'o', topRisks: [{ fingerprint: 'x', title: 't', whyItMatters: 'w' }], nextActions: [] }, []);
     expect(out.riskLevel).toBe('none');

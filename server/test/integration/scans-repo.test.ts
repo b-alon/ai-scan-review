@@ -13,11 +13,14 @@ import {
   listScans,
   markFailed,
   markRetrying,
+  markStaleScansFailed,
   startAttempt,
   updateProgress,
 } from '../../src/db/scans-repo.js';
 import type { Finding } from '../../src/scan/types.js';
 import type { Summary } from '../../src/summarize/contract.js';
+import { eq } from 'drizzle-orm';
+import { scans } from '../../src/db/schema.js';
 import { resetDb, setupTestDb, TEST_DATABASE_URL, type TestDb } from './helpers.js';
 
 const SHA = 'f'.repeat(40);
@@ -66,9 +69,21 @@ describe.skipIf(!TEST_DATABASE_URL)('scans repository', () => {
   it('creates and finds active scans by commit', async () => {
     const scan = await createScan(t.db, newScan());
     expect(scan.status).toBe('queued');
-    expect(await findActiveScanByCommit(t.db, scan.repoUrl, SHA)).toMatchObject({ id: scan.id });
-    expect(await findActiveScanByCommit(t.db, scan.repoUrl, 'e'.repeat(40))).toBeUndefined();
+    expect(await findActiveScanByCommit(t.db, scan.repoUrl, SHA, 60 * 60 * 1000)).toMatchObject({ id: scan.id });
+    expect(await findActiveScanByCommit(t.db, scan.repoUrl, 'e'.repeat(40), 60 * 60 * 1000)).toBeUndefined();
     expect(await countQueued(t.db)).toBe(1);
+  });
+
+  it('ignores stale active scans and lets the reconciler fail them', async () => {
+    const scan = await createScan(t.db, newScan());
+    await startAttempt(t.db, scan.id, 1);
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await t.db.update(scans).set({ createdAt: twoHoursAgo, startedAt: twoHoursAgo }).where(eq(scans.id, scan.id));
+    expect(await findActiveScanByCommit(t.db, scan.repoUrl, SHA, 60 * 60 * 1000)).toBeUndefined();
+    expect(await findActiveScanByCommit(t.db, scan.repoUrl, SHA, 3 * 60 * 60 * 1000)).toMatchObject({ id: scan.id });
+    expect(await markStaleScansFailed(t.db, new Date(Date.now() - 60 * 60 * 1000))).toBe(1);
+    expect(await getScan(t.db, scan.id)).toMatchObject({ status: 'failed', error: expect.stringMatching(/interrupted/) });
+    expect((await listEvents(t.db, scan.id)).at(-1)?.stage).toBe('failed');
   });
 
   it('starts an attempt, records progress and events, and notifies', async () => {

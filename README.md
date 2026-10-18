@@ -53,7 +53,7 @@ Stages, what they produce, and their limits:
 | Stage | Produces | Limits |
 |---|---|---|
 | fetch | a temp directory with the commit's files | 120 s, removed afterwards |
-| dependencies | advisories for `package-lock.json`, `package.json` (exact pins only), `requirements.txt`, `go.mod`, `Gemfile.lock` | manifests up to 3 directories deep, 2000 packages, 120 s |
+| dependencies | advisories for `package-lock.json`, `package.json` (exact pins only), `requirements.txt`, `go.mod`, `Gemfile.lock`; `yarn.lock` and `pnpm-lock.yaml` count as lockfiles but are not parsed yet | manifests up to 3 directories deep, 2000 packages, 120 s |
 | code | secrets (AWS, GitHub, Stripe, Slack, private keys, generic credentials), `eval`, shell and SQL interpolation, `dangerouslySetInnerHTML`, Django `DEBUG=True`, committed `.env` files | 5000 files, 512 KB per file, 120 s |
 | summarize | risk level, headline, overview, top risks, ordered next actions | 60 s for the model call, then fallback |
 

@@ -59,7 +59,7 @@ describe('createGitRefResolver', () => {
     const resolver = createGitRefResolver({ exec, token: 'tok' });
     await resolver.resolve(parseGitHubUrl('https://github.com/o/r', 'dev'));
     const [, args, opts] = calls[0]!;
-    expect(args).toEqual(['ls-remote', 'https://github.com/o/r', 'refs/heads/dev', 'refs/tags/dev']);
+    expect(args).toEqual(['ls-remote', 'https://github.com/o/r', 'refs/heads/dev', 'refs/tags/dev', 'refs/tags/dev^{}']);
     expect(opts.env?.GIT_CONFIG_KEY_0).toBe('http.extraHeader');
     expect(opts.env?.GIT_CONFIG_VALUE_0).toContain('Authorization: Basic ');
     expect(JSON.stringify(args)).not.toContain('tok');

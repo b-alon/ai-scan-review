@@ -16,6 +16,8 @@ export interface FetchAdvisoriesOptions {
   packages: PackageInManifest[];
   signal: AbortSignal;
   concurrency?: number;
+  /** Called for an advisory whose details could not be fetched; the advisory is skipped, the scan continues. */
+  onSkipped?: (id: string, err: unknown) => void;
 }
 
 async function runPool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -39,8 +41,15 @@ export async function fetchAdvisories(opts: FetchAdvisoriesOptions): Promise<{ f
   const cached = await opts.cache.get(allIds);
   const missing = allIds.filter((id) => !cached.has(id));
   const fetched: OsvVuln[] = [];
+  const skipped: string[] = [];
   await runPool(missing, opts.concurrency ?? 5, async (id) => {
-    fetched.push(await opts.osv.getVuln(id, opts.signal));
+    try {
+      fetched.push(await opts.osv.getVuln(id, opts.signal));
+    } catch (err) {
+      if (opts.signal.aborted) throw err;
+      skipped.push(id);
+      opts.onSkipped?.(id, err);
+    }
   });
   await opts.cache.put(fetched);
 

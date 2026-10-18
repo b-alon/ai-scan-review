@@ -8,6 +8,9 @@ const KINDS: Record<string, ManifestKind> = {
   'requirements.txt': 'requirements',
   'go.mod': 'go-mod',
   'Gemfile.lock': 'gemfile-lock',
+  'yarn.lock': 'lock-marker',
+  'pnpm-lock.yaml': 'lock-marker',
+  'npm-shrinkwrap.json': 'lock-marker',
 };
 
 export async function discoverManifests(root: string, maxDepth = 3): Promise<ManifestFile[]> {

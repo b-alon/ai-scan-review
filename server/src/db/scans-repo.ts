@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from 'drizzle-orm';
 import { compareSeverity, type Finding, type ScanStats, type ScanWarning, type Severity, type Stage } from '../scan/types.js';
 import type { Summary } from '../summarize/contract.js';
-import type { Db, Queryable } from './client.js';
+import type { Queryable } from './client.js';
 import { findings, scanEvents, scans, type EventRow, type FindingRow, type ScanRow } from './schema.js';
 
 export interface NewScan {
@@ -52,11 +52,12 @@ export async function listScans(q: Queryable, limit: number): Promise<ScanRow[]>
   return q.select().from(scans).orderBy(desc(scans.createdAt)).limit(limit);
 }
 
-export async function findActiveScanByCommit(q: Queryable, repoUrl: string, commitSha: string): Promise<ScanRow | undefined> {
+export async function findActiveScanByCommit(q: Queryable, repoUrl: string, commitSha: string, maxAgeMs: number): Promise<ScanRow | undefined> {
+  const since = new Date(Date.now() - maxAgeMs);
   const rows = await q
     .select()
     .from(scans)
-    .where(and(eq(scans.repoUrl, repoUrl), eq(scans.commitSha, commitSha), inArray(scans.status, ['queued', 'running'])))
+    .where(and(eq(scans.repoUrl, repoUrl), eq(scans.commitSha, commitSha), inArray(scans.status, ['queued', 'running']), gte(scans.createdAt, since)))
     .orderBy(desc(scans.createdAt))
     .limit(1);
   return rows[0];
@@ -96,7 +97,7 @@ export async function findPreviousDoneScan(q: Queryable, repoUrl: string, before
   return rows[0];
 }
 
-export async function startAttempt(db: Db, scanId: string, attempt: number): Promise<ScanRow | undefined> {
+export async function startAttempt(db: Queryable, scanId: string, attempt: number): Promise<ScanRow | undefined> {
   return db.transaction(async (tx) => {
     await tx.delete(findings).where(eq(findings.scanId, scanId));
     const [row] = await tx
@@ -126,7 +127,7 @@ export async function startAttempt(db: Db, scanId: string, attempt: number): Pro
   });
 }
 
-export async function updateProgress(db: Db, scanId: string, update: ProgressUpdate): Promise<void> {
+export async function updateProgress(db: Queryable, scanId: string, update: ProgressUpdate): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(scans)
@@ -137,7 +138,7 @@ export async function updateProgress(db: Db, scanId: string, update: ProgressUpd
   });
 }
 
-export async function markRetrying(db: Db, scanId: string, error: string): Promise<void> {
+export async function markRetrying(db: Queryable, scanId: string, error: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(scans)
@@ -148,7 +149,7 @@ export async function markRetrying(db: Db, scanId: string, error: string): Promi
   });
 }
 
-export async function markFailed(db: Db, scanId: string, error: string): Promise<void> {
+export async function markFailed(db: Queryable, scanId: string, error: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(scans)
@@ -159,7 +160,19 @@ export async function markFailed(db: Db, scanId: string, error: string): Promise
   });
 }
 
-export async function completeScan(db: Db, scanId: string, c: ScanCompletion): Promise<void> {
+export const INTERRUPTED_MESSAGE = 'The scan was interrupted and did not finish. Submit it again.';
+
+/** Fails queued or running scans older than the given time, which no worker will ever pick up. */
+export async function markStaleScansFailed(db: Queryable, olderThan: Date): Promise<number> {
+  const stale = await db
+    .select({ id: scans.id })
+    .from(scans)
+    .where(and(inArray(scans.status, ['queued', 'running']), lt(scans.createdAt, olderThan)));
+  for (const row of stale) await markFailed(db, row.id, INTERRUPTED_MESSAGE);
+  return stale.length;
+}
+
+export async function completeScan(db: Queryable, scanId: string, c: ScanCompletion): Promise<void> {
   await db.transaction(async (tx) => {
     for (let i = 0; i < c.findings.length; i += 500) {
       const chunk = c.findings.slice(i, i + 500).map((f) => ({ ...f, scanId }));

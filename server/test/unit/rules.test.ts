@@ -27,6 +27,15 @@ describe('rules', () => {
     expect(ids).toEqual(['secret.github_token', 'secret.stripe_live_key', 'secret.private_key', 'secret.slack_webhook']);
   });
 
+  it('flags generic credential assignments in the shapes real code uses', () => {
+    expect(scanText('src/db.ts', 'DB_PASSWORD = "hunter2hunter2"')).toHaveLength(1);
+    expect(scanText('src/db.ts', 'JWT_SECRET: "hunter2hunter2"')).toHaveLength(1);
+    expect(scanText('src/db.ts', 'const dbPassword = "hunter2hunter2";')).toHaveLength(1);
+    expect(scanText('src/db.ts', 'ACCESS_TOKEN="hunter2hunter2"')).toHaveLength(1);
+    expect(scanText('config.json', '"password": "hunter2hunter2",')).toHaveLength(1);
+    expect(scanText('src/db.ts', 'const tokenizer = "abcdefghijk";')).toHaveLength(0);
+  });
+
   it('flags generic credential assignments but not placeholders, env lookups or test paths', () => {
     expect(scanText('src/db.ts', 'const password = "hunter2hunter2";')).toHaveLength(1);
     expect(scanText('src/db.ts', 'const password = "changeme";')).toHaveLength(0);
@@ -39,6 +48,8 @@ describe('rules', () => {
   it('flags eval, shell and sql interpolation, dangerouslySetInnerHTML and DEBUG=True by extension', () => {
     expect(scanText('a.js', 'eval(userInput)')[0]?.ruleId).toBe('code.eval');
     expect(scanText('a.py', 'eval(x)')[0]?.ruleId).toBe('code.eval');
+    expect(scanText('a.py', 'model.eval()')).toHaveLength(0);
+    expect(scanText('a.py', 'self.net.eval()')).toHaveLength(0);
     expect(scanText('a.rb', 'eval(x)')).toHaveLength(0);
     expect(scanText('a.ts', 'execSync(`ls ${dir}`)')[0]?.ruleId).toBe('code.shell_interpolation');
     expect(scanText('a.ts', 'db.query(`select * from t where id = ${id}`)')[0]?.ruleId).toBe('code.sql_interpolation');

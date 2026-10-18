@@ -65,7 +65,7 @@ export const RULES: Rule[] = [
     description: 'A variable named like a password, secret, token or API key is assigned a literal value in source.',
     recommendation: 'Move the credential at {location} out of source into an environment variable or a secret manager, then rotate it.',
     whyItMatters: 'Literal credentials in source leak through clones, forks, logs and screenshots, and cannot be rotated without a code change.',
-    pattern: /\b(?:password|passwd|secret|api[_-]?key|token)\b\s*[:=]\s*['"]([^'"]{8,})['"]/i,
+    pattern: /(?:password|passwd|secret|api[_-]?key|token)(?![a-z0-9])['"]?\s*[:=]\s*['"]([^'"]{8,})['"]/i,
     secret: true,
     placeholderFilter: true,
     fallbackOnly: true,
@@ -79,7 +79,7 @@ export const RULES: Rule[] = [
     description: 'eval executes arbitrary code from a string. If any part of that string comes from input, it is remote code execution.',
     recommendation: 'Replace eval at {location} with JSON.parse, a safe expression parser, or explicit logic.',
     whyItMatters: 'If an attacker influences the evaluated string they can run code with the privileges of the application.',
-    pattern: /\beval\s*\(/,
+    pattern: /(?<![.\w])eval\s*\(/,
     extensions: [...JS, 'py'],
   },
   {

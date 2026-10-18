@@ -96,6 +96,19 @@ describe('createOsvClient', () => {
 });
 
 describe('fetchAdvisories', () => {
+  it('skips an advisory whose details cannot be fetched and keeps the rest', async () => {
+    const osv: OsvClient = {
+      queryBatch: async (refs) => refs.map(() => ['GHSA-p6mc-m468-83gw', 'GHSA-gone']),
+      getVuln: async (id) => {
+        if (id === 'GHSA-gone') throw new OsvError('OSV responded with status 404', false);
+        return ghsa;
+      },
+    };
+    const result = await fetchAdvisories({ osv, cache: createMemoryVulnCache(), packages: [{ ref: lodash, manifest: 'package-lock.json' }], signal: new AbortController().signal });
+    expect(result.findings.map((f) => f.fingerprint)).toEqual(['dep:npm:lodash:GHSA-p6mc-m468-83gw']);
+    expect(result.advisories).toBe(2);
+  });
+
   it('dedupes advisories, uses the cache, and only fetches missing details', async () => {
     const getVuln = vi.fn(async (id: string) => ({ ...ghsa, id, aliases: id === 'CVE-2020-8203' ? ['GHSA-p6mc-m468-83gw'] : ghsa.aliases }));
     const osv: OsvClient = {

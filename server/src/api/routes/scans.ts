@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { SummarizerMode } from '../../config.js';
 import type { Queryable } from '../../db/client.js';
-import { createScan, findActiveScanByCommit, findRecentDoneScanByCommit } from '../../db/scans-repo.js';
+import { createScan, findActiveScanByCommit, findRecentDoneScanByCommit, markFailed } from '../../db/scans-repo.js';
+import { ACTIVE_SCAN_MAX_AGE_MS } from '../../queue/boss.js';
 import { InvalidRepoUrlError, parseGitHubUrl, type ParsedRepo } from '../../github/parse-url.js';
 import { GitUnavailableError, RefNotFoundError, RepoNotFoundError, type RefResolver, type ResolvedRef } from '../../github/resolve-ref.js';
 import { HttpError } from '../errors.js';
@@ -15,6 +16,7 @@ export interface ScanRouteDeps {
   freshnessMinutes: number;
   readonly summarizerMode: SummarizerMode;
   maxAttempts: number;
+  activeMaxAgeMs?: number;
 }
 
 export type ReusedReason = 'in_progress' | 'recent' | null;
@@ -61,8 +63,10 @@ export function registerScanRoutes(app: FastifyInstance, deps: ScanRouteDeps): v
       throw err;
     }
 
-    const active = await findActiveScanByCommit(deps.db, parsed.repoUrl, resolved.commitSha);
-    if (active) return reply.code(200).send(await respond(active.id, 'in_progress'));
+    if (!body.data.force) {
+      const active = await findActiveScanByCommit(deps.db, parsed.repoUrl, resolved.commitSha, deps.activeMaxAgeMs ?? ACTIVE_SCAN_MAX_AGE_MS);
+      if (active) return reply.code(200).send(await respond(active.id, 'in_progress'));
+    }
 
     if (!body.data.force && deps.freshnessMinutes > 0) {
       const since = new Date(Date.now() - deps.freshnessMinutes * 60_000);
@@ -79,7 +83,13 @@ export function registerScanRoutes(app: FastifyInstance, deps: ScanRouteDeps): v
       commitSha: resolved.commitSha,
       maxAttempts: deps.maxAttempts,
     });
-    await deps.enqueue(scan.id);
+    try {
+      await deps.enqueue(scan.id);
+    } catch (err) {
+      req.log.error({ err, scanId: scan.id }, 'could not enqueue scan');
+      await markFailed(deps.db, scan.id, 'The scan could not be queued.');
+      throw new HttpError(503, 'queue_unavailable', 'The scan queue is not available right now. Try again in a moment.');
+    }
     req.log.info({ scanId: scan.id, repoUrl: scan.repoUrl, commitSha: scan.commitSha }, 'scan queued');
     return reply.code(201).send(await respond(scan.id, null));
   });

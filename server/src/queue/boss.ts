@@ -19,6 +19,8 @@ export type ScanJobHandler = (job: ScanJob) => Promise<void>;
 
 export const SCAN_JOB_OPTIONS = { retryLimit: 2, retryDelay: 2, retryBackoff: true, expireInSeconds: 600 } as const;
 export const MAX_ATTEMPTS = SCAN_JOB_OPTIONS.retryLimit + 1;
+/** Longest a scan can legitimately stay queued or running: every attempt may run to expiry, plus backoff slack. */
+export const ACTIVE_SCAN_MAX_AGE_MS = SCAN_JOB_OPTIONS.expireInSeconds * 1000 * MAX_ATTEMPTS + 5 * 60 * 1000;
 
 export interface BossOptions {
   testSpies?: boolean;

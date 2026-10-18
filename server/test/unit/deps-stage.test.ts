@@ -55,6 +55,18 @@ describe('runDependencyStage', () => {
     expect(down.warnings.map((w) => w.code)).toEqual(['osv_unavailable']);
   });
 
+  it('treats yarn and pnpm lockfiles as lockfiles', async () => {
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({ dependencies: { lodash: '^4.0.0' } }));
+    await writeFile(path.join(root, 'yarn.lock'), '# yarn lockfile v1\n');
+    await mkdir(path.join(root, 'web'));
+    await writeFile(path.join(root, 'web/package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
+    await writeFile(path.join(root, 'web/pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    const osv: OsvClient = { queryBatch: async (refs: PackageRef[]) => refs.map(() => []), getVuln: async () => ({ id: 'x' }) };
+    const result = await runDependencyStage({ dir: root, osv, cache: createMemoryVulnCache(), signal, progress: async () => undefined, log });
+    expect(result.findings.filter((f) => f.ruleId === 'deps.no_lockfile')).toEqual([]);
+    expect(result.packages).toBe(1);
+  });
+
   it('reports unreadable manifests as warnings', async () => {
     await writeFile(path.join(root, 'package-lock.json'), '{not json');
     const osv: OsvClient = { queryBatch: async () => [], getVuln: async () => ({ id: 'x' }) };
