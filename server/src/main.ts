@@ -12,7 +12,10 @@ import { realExec } from './github/exec.js';
 import { createGitRefResolver } from './github/resolve-ref.js';
 import { createLogger } from './logger.js';
 import { createBoss, enqueueScan, MAX_ATTEMPTS, registerScanWorker } from './queue/boss.js';
-import { createFakePipeline } from './scan/fake-pipeline.js';
+import { createDbVulnCache } from './osv/cache.js';
+import { createOsvClient } from './osv/client.js';
+import { createPipeline } from './scan/pipeline.js';
+import { createDeterministicSummarizer } from './summarize/deterministic.js';
 import { createScanJobHandler } from './scan/run-scan.js';
 import { APP_VERSION } from './version.js';
 
@@ -64,7 +67,14 @@ async function main(): Promise<void> {
   });
 
   if (runsWorker) {
-    const handler = createScanJobHandler({ db, pipeline: createFakePipeline(), logger });
+    const pipeline = createPipeline({
+      exec: realExec,
+      token: config.GITHUB_TOKEN,
+      osv: createOsvClient(),
+      cache: createDbVulnCache(db),
+      summarizer: createDeterministicSummarizer(),
+    });
+    const handler = createScanJobHandler({ db, pipeline, logger });
     await registerScanWorker(boss, config.WORKER_CONCURRENCY, handler);
     logger.info({ concurrency: config.WORKER_CONCURRENCY }, 'scan worker registered');
   }
