@@ -76,6 +76,7 @@ Request flow:
 | Validation | Zod | One schema per boundary; the summary contract is shared by both summarizers |
 | UI | React 18, Vite, React Router, Mantine | Familiar; Mantine ships Stepper, Timeline, Badge, Table, Accordion and a color scheme toggle, so no hand-written component CSS; built once in the Docker image |
 | Tests | Vitest | Fast, TypeScript-native |
+| Observability | pino, prom-client | Structured logs with scan id correlation; Prometheus metrics without extra containers |
 | Git access | `git` CLI in the image | Resolves any ref, no API rate limits, private repos via token header |
 | Vulnerability data | OSV.dev API | Free, no key, covers npm, PyPI, Go, RubyGems |
 | AI summary | `@anthropic-ai/sdk`, model `claude-opus-5-5` by default | Structured output guarantees the contract |
@@ -224,7 +225,17 @@ validation, 404 for unknown scan, 500 otherwise. All bodies validated with Zod.
   terminal event and close.
 
 **GET /api/health**
-- `{ ok: true, db: "ok", summarizer: "claude" | "deterministic", version }`.
+- Liveness: `{ ok: true, role, version, summarizer: "claude" | "deterministic" }`.
+  Returns 200 as long as the process is up.
+
+**GET /api/ready**
+- Readiness: checks the database with `SELECT 1`, that migrations are
+  applied, and that pg-boss has started. 200 with the checks when all pass,
+  503 with the failing check otherwise. Compose uses it as the healthcheck.
+  The worker exposes the same two routes on an unpublished port.
+
+**GET /metrics**
+- Prometheus text format from `prom-client`. See section 14.
 
 Notification path: the worker runs `NOTIFY scan_updates, '<scanId>'` after
 each committed transition. The api holds one dedicated `pg` client in LISTEN
@@ -535,7 +546,43 @@ Environment, validated by Zod at startup with clear errors:
    where I disagreed.
 9. Testing and development commands.
 
-## 13. Build order
+## 13. Observability
+
+Scoped for a POC: enough to debug a failed scan from logs alone and to say
+what you would alert on, nothing that needs an extra container.
+
+**Logging.** Pino, Fastify's built-in logger, at `LOG_LEVEL`. JSON output in
+Docker, `pino-pretty` under `npm run dev` only. Every request has a request
+id, honoring an incoming `x-request-id` header. Every scan log line carries
+`scanId` through a child logger in both api and worker, so the full story of
+one scan is one grep: submit, each stage start and end with duration and
+counts, OSV batch sizes, summarizer choice and fallback reason, retries with
+attempt number, terminal status. pg-boss errors are logged via `boss.on`.
+Redaction: `authorization` headers, `GITHUB_TOKEN`, `ANTHROPIC_API_KEY` and
+anything under a `token` or `apiKey` key.
+
+**Metrics.** `prom-client` on `/metrics`, default Node metrics plus:
+- `scans_total{status}` for `done` and `failed`
+- `scan_stage_duration_seconds{stage}` histogram
+- `scan_queue_depth` gauge, sampled from pg-boss every 10 s
+- `osv_requests_total{outcome}` for ok, error, timeout
+- `summarizer_runs_total{mode, fallback}`
+
+The README lists what to alert on: failure rate, queue depth growing,
+stage duration p95, summarizer fallback rate.
+
+**Health.** `/api/health` for liveness and `/api/ready` for readiness, as in
+section 4. Compose healthchecks use readiness for api and worker.
+
+**In-product trail.** `scan_events` and per-stage durations in `stats` are
+the audit trail per scan and feed the UI timeline. pg-boss keeps job history
+including failures and retries.
+
+**Deferred, documented in the README.** OpenTelemetry tracing and an error
+tracker. Both are env-var toggles with auto-instrumentation, but they are
+dead weight without a backend to receive them.
+
+## 14. Build order
 
 1. Scaffold: workspaces, TypeScript, Drizzle schema and first migration,
    Compose with db, migrate, api, worker. `docker compose up` serves a health
