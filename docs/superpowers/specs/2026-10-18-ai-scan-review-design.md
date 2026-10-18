@@ -183,7 +183,7 @@ only is new, in the previous only is fixed, in both is still open.
 All responses JSON. Errors are `{ error: { code, message } }` with 400 for
 validation, 404 for unknown scan, 500 otherwise. All bodies validated with Zod.
 
-**POST /api/scans** body `{ repoUrl: string, ref?: string }`
+**POST /api/scans** body `{ repoUrl: string, ref?: string, force?: boolean }`
 - Accepted URL forms: `https://github.com/owner/repo`, with or without `.git`
   or trailing slash; `git@github.com:owner/repo.git`; `/tree/<ref>`;
   `/releases/tag/<tag>`; `/commit/<sha>`; `/pull/<n>` (maps to
@@ -197,11 +197,20 @@ validation, 404 for unknown scan, 500 otherwise. All bodies validated with Zod.
   token, 502 when GitHub cannot be reached. A SHA input is validated by
   format only; a SHA that does not exist fails at fetch time.
 - If a scan for the same `repo_url` and `commit_sha` is `queued` or
-  `running`, that scan is returned with 200 instead of creating a duplicate.
-  A done scan of the same commit does not block a new one: advisories change
-  over time, so rescanning an unchanged commit is meaningful.
+  `running`, that scan is returned with 200 and `reused: "in_progress"`
+  instead of creating a duplicate.
+- Freshness window: unless `force` is true, if a `done` scan of the same
+  `repo_url` and `commit_sha` finished within the last
+  `SCAN_FRESHNESS_MINUTES` (default 10) and was produced by the currently
+  configured summarizer, that scan is returned with 200 and
+  `reused: "recent"`. The summarizer condition means enabling the Claude key
+  and resubmitting gets a fresh AI result rather than the cached rule-based
+  one. Older results are not reused: advisories change over time, so
+  rescanning an unchanged commit is meaningful.
 - Otherwise inserts the scan with `commit_sha` and `ref_resolved` set, sends
-  the pg-boss job, returns 201 with the scan.
+  the pg-boss job, returns 201 with the scan and `reused: null`.
+- Response shape in all three cases: the scan object plus a top-level
+  `reused` field.
 
 **GET /api/scans/:id**
 - Always: scan fields, progress, events timeline, warnings.
@@ -432,7 +441,7 @@ Progress messages are specific: "Fetching owner/repo at 3f9a2c1", "Fetched
 - Secrets: the GitHub token is never logged or embedded in URLs; evidence is
   masked before it is stored; pino redacts `authorization` headers.
 - Duplicate submissions for the same commit are collapsed at the API while a
-  scan for it is in flight.
+  scan for it is in flight, and within the freshness window afterwards.
 
 ## 8. UI
 
@@ -451,7 +460,11 @@ Routes:
   summarizing and persisting stages) with the active step animated, the
   live progress message, elapsed time, and a timeline of completed steps with
   durations. On `failed`: an error card with the reason and a "Scan again"
-  button. On `done`: the result view.
+  button. On `done`: the result view. When the submit response carried
+  `reused: "recent"`, a banner above the result reads "This commit was
+  scanned {time ago}. Showing that result." with a "Scan again" button that
+  resubmits with `force: true`. When it carried `reused: "in_progress"`, a
+  notice reads "A scan of this commit was already running. Joined it."
 - `/repos/:owner/:name` History. Scans of one repo in order with risk level
   and counts, each linking to its result.
 
@@ -488,7 +501,8 @@ Vitest in `server/` and `web/`. Three layers:
   on error.
 - Integration, requires `DATABASE_URL` (the dev Compose database): Drizzle
   repository functions; API routes through `fastify.inject` with a fake ref
-  resolver, including SSE snapshot and terminal events; the full worker handler with a fake git
+  resolver, covering the create branches (new, in-progress reuse, recent
+  reuse, force, summarizer mismatch) and SSE snapshot and terminal events; the full worker handler with a fake git
   fetcher pointing at a fixture directory and a fake OSV client, covering
   success, retryable failure then success, and non-retryable failure.
 - Smoke, `npm run smoke`: against a running stack, submits the demo repo at
@@ -523,6 +537,7 @@ Environment, validated by Zod at startup with clear errors:
 | `ANTHROPIC_MODEL` | no | `claude-opus-5-5` | model id |
 | `GITHUB_TOKEN` | no | unset | private repos and higher limits |
 | `WORKER_CONCURRENCY` | no | `2` | scans per worker |
+| `SCAN_FRESHNESS_MINUTES` | no | `10` | reuse a done scan of the same commit younger than this |
 | `LOG_LEVEL` | no | `info` | pino level |
 
 `.env.example` documents all of them. Compose reads `.env` if present.
@@ -531,7 +546,8 @@ Environment, validated by Zod at startup with clear errors:
 
 1. What it is, in the customer's three questions.
 2. Quick start: `docker compose up`, open `http://localhost:8080`.
-3. Try it: the demo repo at `v1`, then `v2`. Enabling the AI summary.
+3. Try it: the demo repo at `v1`, then `v2`. Enabling the AI summary, and
+   using "Scan again" to bypass the freshness window.
 4. Architecture diagram and request flow.
 5. Decisions and trade-offs: pg-boss over Redis, Postgres as the only
    dependency, SSE over polling and WebSocket, hybrid summarizer, deterministic
