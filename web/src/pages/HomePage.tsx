@@ -1,10 +1,85 @@
-import { Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Divider, Group, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router';
+import { api } from '../api';
+import { ScanListItemRow } from '../components/ScanListItemRow';
+import type { ScanListItem } from '../types';
 
 export function HomePage() {
+  const navigate = useNavigate();
+  const [repoUrl, setRepoUrl] = useState('');
+  const [ref, setRef] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [recent, setRecent] = useState<ScanListItem[]>([]);
+
+  useEffect(() => {
+    api
+      .listScans(20)
+      .then((r) => setRecent(r.scans))
+      .catch(() => setRecent([]));
+  }, []);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const scan = await api.createScan(repoUrl, ref);
+      navigate(`/scans/${scan.id}`, { state: { reused: scan.reused } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <Stack gap="xs">
-      <Title order={2}>Scan a GitHub repository</Title>
-      <Text c="dimmed">Submit a repository to get a prioritized security review.</Text>
+    <Stack gap="xl">
+      <Stack gap="xs">
+        <Title order={2}>Scan a GitHub repository</Title>
+        <Text c="dimmed">Get a prioritized security review: what matters, what is risky, and what to do next.</Text>
+      </Stack>
+      <Paper withBorder p="lg" radius="md">
+        <form onSubmit={submit}>
+          <Stack gap="md">
+            <TextInput
+              label="Repository URL"
+              placeholder="https://github.com/owner/repo"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.currentTarget.value)}
+              required
+              size="md"
+            />
+            <TextInput
+              label="Branch, tag or commit"
+              placeholder="default branch"
+              value={ref}
+              onChange={(e) => setRef(e.currentTarget.value)}
+              size="md"
+            />
+            {error && <Alert color="red">{error}</Alert>}
+            <Group justify="flex-end">
+              <Button type="submit" loading={busy} size="md">
+                Scan
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Paper>
+      {recent.length > 0 && (
+        <Stack gap="xs">
+          <Title order={4}>Recent scans</Title>
+          <Paper withBorder px="md" radius="md">
+            {recent.map((item, i) => (
+              <div key={item.id}>
+                {i > 0 && <Divider />}
+                <ScanListItemRow item={item} />
+              </div>
+            ))}
+          </Paper>
+        </Stack>
+      )}
     </Stack>
   );
 }
