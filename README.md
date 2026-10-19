@@ -94,6 +94,7 @@ Stages, what they produce, and their limits:
 - SARIF export so findings land in GitHub code scanning.
 - OpenTelemetry traces and an error tracker, both env-var toggles once a backend exists.
 - A broker-backed queue only if throughput outgrows Postgres.
+- Crash hygiene for clones: temp directories are removed in a `finally`, so a worker killed mid-scan (OOM, SIGKILL) leaves its clone on disk until the container is recreated. The fix is a dedicated scan directory the worker sweeps on startup and periodically, plus a `restart` policy on the api and worker services so a crashed worker comes back and sweeps on its own. The scan itself already recovers: pg-boss retries the job on a live worker with a fresh directory.
 
 ## How I used coding agents
 
