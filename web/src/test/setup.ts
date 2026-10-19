@@ -1,5 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, vi } from 'vitest';
+
+// Vitest runs without globals here, so Testing Library does not register its own cleanup.
+// Unmounting after every test flushes React's deferred work before jsdom is torn down.
+afterEach(() => cleanup());
 
 const { getComputedStyle } = window;
 window.getComputedStyle = (elt) => getComputedStyle(elt);
