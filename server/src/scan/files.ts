@@ -1,5 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { READY_MARKER } from './clone-cache.js';
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -50,7 +51,7 @@ export async function walkFiles(root: string, opts: WalkOptions = {}): Promise<{
         if (!IGNORED_DIRS.has(entry.name)) await visit(abs, depth + 1);
         continue;
       }
-      if (!entry.isFile()) continue;
+      if (!entry.isFile() || entry.name === READY_MARKER) continue;
       let size: number;
       try {
         size = (await stat(abs)).size;

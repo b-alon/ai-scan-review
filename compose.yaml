@@ -8,6 +8,8 @@ x-app-env: &app-env
   GITHUB_TOKEN: ${GITHUB_TOKEN:-}
   WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
   SCAN_FRESHNESS_MINUTES: ${SCAN_FRESHNESS_MINUTES:-10}
+  SCAN_CACHE_DIR: /var/lib/scan-cache
+  SCAN_CACHE_MAX_AGE_HOURS: ${SCAN_CACHE_MAX_AGE_HOURS:-24}
 
 x-app-healthcheck: &app-healthcheck
   test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/ready"]
@@ -59,6 +61,8 @@ services:
     environment:
       <<: *app-env
       ROLE: worker
+    volumes:
+      - clones:/var/lib/scan-cache
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -66,3 +70,4 @@ services:
 
 volumes:
   dbdata:
+  clones:

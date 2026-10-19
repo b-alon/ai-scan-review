@@ -21,6 +21,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/server/drizzle server/drizzle
 COPY --from=build /app/web/dist web/dist
+RUN mkdir -p /var/lib/scan-cache && chown node:node /var/lib/scan-cache
 USER node
 EXPOSE 8787
 CMD ["node", "server/dist/main.js"]

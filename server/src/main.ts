@@ -16,6 +16,7 @@ import { metrics, registerMetricsRoute } from './metrics.js';
 import { ACTIVE_SCAN_MAX_AGE_MS, createBoss, enqueueScan, MAX_ATTEMPTS, registerScanWorker } from './queue/boss.js';
 import { createDbVulnCache } from './osv/cache.js';
 import { createOsvClient } from './osv/client.js';
+import { sweepCloneCache } from './scan/clone-cache.js';
 import { createPipeline } from './scan/pipeline.js';
 import { createSummarizer } from './summarize/select.js';
 import { createScanJobHandler } from './scan/run-scan.js';
@@ -72,7 +73,16 @@ async function main(): Promise<void> {
   });
 
   let sampler: ReturnType<typeof setInterval> | null = null;
+  let sweeper: ReturnType<typeof setInterval> | null = null;
   if (runsWorker) {
+    const cacheMaxAgeMs = config.SCAN_CACHE_MAX_AGE_HOURS * 60 * 60 * 1000;
+    const sweep = async (): Promise<void> => {
+      const { removed } = await sweepCloneCache(config.SCAN_CACHE_DIR, cacheMaxAgeMs);
+      if (removed > 0) logger.info({ removed, cacheDir: config.SCAN_CACHE_DIR }, 'swept clone cache');
+    };
+    await sweep();
+    sweeper = setInterval(() => void sweep().catch((err: unknown) => logger.warn({ err }, 'clone cache sweep failed')), 10 * 60 * 1000);
+    sweeper.unref();
     const stale = await markStaleScansFailed(db, new Date(Date.now() - ACTIVE_SCAN_MAX_AGE_MS));
     if (stale > 0) logger.warn({ stale }, 'failed scans left behind by an earlier worker');
     sampler = setInterval(() => {
@@ -86,6 +96,7 @@ async function main(): Promise<void> {
       token: config.GITHUB_TOKEN,
       osv: createOsvClient({ onRequest: (outcome) => metrics.osvRequestsTotal.inc({ outcome }) }),
       cache: createDbVulnCache(db),
+      cacheDir: config.SCAN_CACHE_DIR,
       summarizer: createSummarizer(config, logger),
     });
     const handler = createScanJobHandler({ db, pipeline, logger });
@@ -101,6 +112,7 @@ async function main(): Promise<void> {
     stopping = true;
     logger.info({ signal }, 'shutting down');
     if (sampler) clearInterval(sampler);
+    if (sweeper) clearInterval(sweeper);
     try {
       await boss.stop({ graceful: true, timeout: 30_000 });
       await app.close();

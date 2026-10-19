@@ -54,7 +54,7 @@ Stages, what they produce, and their limits:
 
 | Stage | Produces | Limits |
 |---|---|---|
-| fetch | a temp directory with the commit's files | 120 s, removed afterwards |
+| fetch | the commit's files in a content-addressed clone cache keyed by repository and commit, reused by retries and later scans of the same commit | 120 s; entries older than `SCAN_CACHE_MAX_AGE_HOURS` are swept |
 | dependencies | advisories for `package-lock.json`, `package.json` (exact pins only), `requirements.txt`, `go.mod`, `Gemfile.lock`; `yarn.lock` and `pnpm-lock.yaml` count as lockfiles but are not parsed yet | manifests up to 3 directories deep, 2000 packages, 120 s |
 | code | secrets (AWS, GitHub, Stripe, Slack, private keys, generic credentials), `eval`, shell and SQL interpolation, `dangerouslySetInnerHTML`, Django `DEBUG=True`, committed `.env` files | 5000 files, 512 KB per file, 120 s |
 | summarize | risk level, headline, overview, top risks, ordered next actions | 60 s for the model call, then fallback |
@@ -82,7 +82,7 @@ Stages, what they produce, and their limits:
 - Secret values are masked before they are stored: evidence keeps the first four characters followed by `****`.
 - The GitHub token is passed to git through `GIT_CONFIG_*` environment variables, never in a URL, argv or a log line. Pino redacts authorization headers and token fields.
 - The readiness endpoint reports the database as `unavailable` and logs the detail instead of echoing error text.
-- Resource limits apply to every stage: file count, file size, package count and per-stage timeouts. Temp directories are removed in a `finally`.
+- Resource limits apply to every stage: file count, file size, package count and per-stage timeouts. Clone cache paths are built from a hash of the validated repository URL and the 40 character commit SHA, never from raw input, and the cache is bounded by age.
 - Scanned repositories are read, never executed or installed.
 - The dev-only Compose file publishes the database on `127.0.0.1` only. The production Compose file does not publish it at all.
 - There is no authentication or tenancy. This is a local review tool, not a hosted service; see below.
@@ -96,8 +96,8 @@ Stages, what they produce, and their limits:
 - SARIF export so findings land in GitHub code scanning.
 - OpenTelemetry traces and an error tracker, both env-var toggles once a backend exists.
 - A broker-backed queue only if throughput outgrows Postgres.
-- Resumable scans. A worker killed mid-scan loses only that attempt: pg-boss retries on a live worker, the handler resets and starts from the fetch, and cached advisory details are reused. That is the right trade at current scan sizes, measured in seconds. If scans grow to minutes, or add paid per-file steps, persist each stage's output and resume from the last completed stage instead of restarting.
-- Crash hygiene for clones: temp directories are removed in a `finally`, so a worker killed mid-scan (OOM, SIGKILL) leaves its clone on disk until the container is recreated. The fix is a dedicated scan directory the worker sweeps on startup and periodically, plus a `restart` policy on the api and worker services so a crashed worker comes back and sweeps on its own. The scan itself already recovers: pg-boss retries the job on a live worker with a fresh directory.
+- Resumable scans beyond the fetch. A worker killed mid-scan loses only that attempt: pg-boss retries on a live worker and the handler resets and reruns the stages. The fetch, the slowest and most network-bound stage, is already resumable: clones live in a content-addressed cache keyed by repository and commit, written atomically (clone into a temp directory, rename into place only once `HEAD` matches), so a retry or a later scan of the same commit reuses it and a crash mid-clone never leaves a half-entry. Advisory details are cached in Postgres. The remaining stages take seconds, so restarting them is the right trade today; if scans grow to minutes or add paid per-file steps, persist each stage's output and resume from the last completed stage.
+- A `restart` policy on the api and worker services, so a crashed worker comes back on its own. The clone cache is swept on worker start and every ten minutes, which also clears temp directories left by a crash.
 
 ## How I used coding agents
 
@@ -136,6 +136,8 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit and integration tests
 | `GITHUB_TOKEN` | no | unset | private repositories |
 | `WORKER_CONCURRENCY` | no | `2` | scans per worker |
 | `SCAN_FRESHNESS_MINUTES` | no | `10` | reuse a done scan of the same commit younger than this |
+| `SCAN_CACHE_DIR` | no | OS temp dir `/scan-cache`; `/var/lib/scan-cache` in Compose | content-addressed clone cache |
+| `SCAN_CACHE_MAX_AGE_HOURS` | no | `24` | sweep cached clones older than this |
 | `LOG_LEVEL` | no | `info` | pino level |
 
 Metrics are served at `/metrics` on both roles (the worker's port is not published; use `docker compose exec worker wget -qO- http://127.0.0.1:8787/metrics`). Readiness is `/api/ready`.

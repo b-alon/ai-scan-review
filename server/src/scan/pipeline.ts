@@ -41,6 +41,7 @@ export interface PipelineDeps {
   fetchTimeoutMs?: number;
   stageTimeoutMs?: number;
   tmpRoot?: string;
+  cacheDir?: string | undefined;
   onStage?: (stage: Stage, ms: number) => void;
 }
 
@@ -68,11 +69,11 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
 
       await ctx.progress('fetching', 2, `Fetching ${ctx.scan.repoOwner}/${ctx.scan.repoName} at ${ctx.scan.commitSha.slice(0, 7)}`);
       const fetched = await timed('fetching', (signal) =>
-        fetchRepo({ repoUrl: ctx.scan.repoUrl, commitSha: ctx.scan.commitSha, token: deps.token, exec: deps.exec, signal, timeoutMs: fetchTimeoutMs, tmpRoot: deps.tmpRoot }),
+        fetchRepo({ repoUrl: ctx.scan.repoUrl, commitSha: ctx.scan.commitSha, token: deps.token, exec: deps.exec, signal, timeoutMs: fetchTimeoutMs, tmpRoot: deps.tmpRoot, cacheDir: deps.cacheDir }),
       );
 
       try {
-        await ctx.progress('fetching', 25, `Fetched ${fetched.fileCount} files`);
+        await ctx.progress('fetching', 25, fetched.cached ? `Reused the cached clone, ${fetched.fileCount} files` : `Fetched ${fetched.fileCount} files`);
 
         await ctx.progress('dependencies', 30, 'Looking for dependency manifests');
         const depsResult = await timed('dependencies', (signal) =>

@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { z } from 'zod';
 
 const EnvSchema = z.object({
@@ -9,6 +11,8 @@ const EnvSchema = z.object({
   GITHUB_TOKEN: z.string().optional(),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   SCAN_FRESHNESS_MINUTES: z.coerce.number().int().nonnegative().default(10),
+  SCAN_CACHE_DIR: z.string().min(1).default(path.join(os.tmpdir(), 'scan-cache')),
+  SCAN_CACHE_MAX_AGE_HOURS: z.coerce.number().positive().default(24),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   NODE_ENV: z.string().default('development'),
 });
