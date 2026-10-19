@@ -15,13 +15,13 @@ export function NextActions({ actions, findings }: { actions: Summary['nextActio
         return (
           <Paper key={`${i}-${action.action}`} withBorder radius="md" p="md">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Group gap="sm" align="flex-start" wrap="nowrap">
-                <Badge circle size="lg" variant="filled">
+              <Group gap="sm" align="flex-start" wrap="nowrap" style={{ flex: '1 1 auto', minWidth: 0 }}>
+                <Badge circle size="lg" variant="filled" style={{ flex: '0 0 auto' }}>
                   {i + 1}
                 </Badge>
                 <Text>{action.action}</Text>
               </Group>
-              <Badge color={EFFORT_COLOR[action.effort]} variant="light">
+              <Badge color={EFFORT_COLOR[action.effort]} variant="light" style={{ flex: '0 0 auto' }}>
                 {action.effort}
               </Badge>
             </Group>
