@@ -9,7 +9,7 @@ Connect a GitHub repository and get a security review that answers three questio
 The only prerequisite is Docker.
 
 ```bash
-git clone <this repository> ai-scan-review
+git clone https://github.com/b-alon/ai-scan-review.git
 cd ai-scan-review
 docker compose up
 ```
