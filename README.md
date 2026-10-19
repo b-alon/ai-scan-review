@@ -59,6 +59,25 @@ Stages, what they produce, and their limits:
 | code | secrets (AWS, GitHub, Stripe, Slack, private keys, generic credentials), `eval`, shell and SQL interpolation, `dangerouslySetInnerHTML`, Django `DEBUG=True`, committed `.env` files | 5000 files, 512 KB per file, 120 s |
 | summarize | risk level, headline, overview, top risks, ordered next actions | 60 s for the model call, then fallback |
 
+### Code rules
+
+The code stage is a small set of data-driven rules in [`server/src/scan/rules/rules.ts`](server/src/scan/rules/rules.ts), each a regex applied line by line to files of certain extensions, with a severity, a plain-language title, a recommendation and a "why it matters" sentence that the summary reuses. Every rule has positive and negative cases in [`server/test/unit/rules.test.ts`](server/test/unit/rules.test.ts); adding a rule means adding one entry and a pair of test lines.
+
+| Rule | Severity | Fires on |
+|---|---|---|
+| `secret.aws_access_key`, `secret.github_token`, `secret.stripe_live_key`, `secret.slack_webhook` | critical / high | vendor key formats, wherever they appear |
+| `secret.private_key` | critical | a PEM private key header |
+| `secret.generic_assignment` | high | `password`, `secret`, `token` or `api_key` assigned a string literal, including `DB_PASSWORD = "..."` and `"password": "..."`; quiet for placeholders such as `changeme` and when a specific secret rule already matched the line |
+| `code.eval` | medium | `eval(` in JavaScript, TypeScript and Python, not method calls like `model.eval()` |
+| `code.shell_interpolation` | high | `exec(` or `execSync(` with a template literal containing `${...}` |
+| `code.sql_interpolation` | high | `.query(`, `.execute(` or `.raw(` with a template literal containing `${...}` |
+| `code.dangerously_set_inner_html` | low | `dangerouslySetInnerHTML` in React files |
+| `config.debug_true` | low | `DEBUG = True` in Python settings |
+| `config.env_committed` | high | a committed `.env` file, matched by name; `.env.example` is excluded |
+| `deps.no_lockfile` | medium | a `package.json` with no lockfile beside it, raised by the dependency stage |
+
+Evidence is masked before it is stored: a matched secret keeps its first four characters, and every evidence line is also run through the secret patterns so a credential sharing a line with an `eval` finding is masked too. Fingerprints hash the normalized line, not its number, so the comparison survives unrelated edits.
+
 ## Decisions
 
 **Postgres is the only dependency.** The queue (pg-boss), progress, results and history all live in one database. pg-boss gives retries with backoff, job expiry for dead workers and graceful shutdown without adding Redis. The job payload is only the scan id; our own tables are the record, pg-boss is transport. Only `server/src/queue/boss.ts` knows pg-boss exists: the API calls `enqueueScan(scanId)` and the worker calls `registerScanWorker(handler)`. If scan volume ever outgrows a Postgres-backed queue, that one file is replaced with Redis and BullMQ or SQS, and the routes, the scan handler and the schema stay as they are.
@@ -95,6 +114,8 @@ Stages, what they produce, and their limits:
 - More ecosystems and lockfile formats (yarn, pnpm, Cargo, Maven), and CVSS vectors scored to numbers instead of the medium default.
 - SARIF export so findings land in GitHub code scanning.
 - OpenTelemetry traces and an error tracker, both env-var toggles once a backend exists.
+- Extend the code rules: more vendor key formats, `query(` without a receiver, `.env.sample` and `.envrc`, insecure deserialization, weak hashing for passwords, and per-language rule sets. The rule table is data, so each addition is one entry and two test lines.
+- An LLM security review of the files that matter most. Regex rules find known shapes; a model can read an authentication module, a request handler or a config loader and reason about what it does. A bounded version: pick a small set of high-value files by path and content heuristics (entry points, auth and session code, routes, config), send each with a strict schema that must cite `file:line` for every claim, run the same fingerprint and "untrusted content" guards as the summary, cap the spend per scan, and label those findings as model-derived so a reviewer can weigh them differently from rule hits.
 - A broker-backed queue only if throughput outgrows Postgres.
 - Resumable scans beyond the fetch. A worker killed mid-scan loses only that attempt: pg-boss retries on a live worker and the handler resets and reruns the stages. The fetch, the slowest and most network-bound stage, is already resumable: clones live in a content-addressed cache keyed by repository and commit, written atomically (clone into a temp directory, rename into place only once `HEAD` matches) under a per-entry filesystem lock shared by every worker on the volume, so a retry or a later scan of the same commit reuses it, two workers never clone the same commit at once, a crash mid-clone never leaves a half-entry, and a lock left by a dead worker is taken over after the fetch timeout. Advisory details are cached in Postgres. The remaining stages take seconds, so restarting them is the right trade today; if scans grow to minutes or add paid per-file steps, persist each stage's output and resume from the last completed stage.
 - A `restart` policy on the api and worker services, so a crashed worker comes back on its own. The clone cache is swept on worker start and every ten minutes, which also clears temp directories left by a crash.
