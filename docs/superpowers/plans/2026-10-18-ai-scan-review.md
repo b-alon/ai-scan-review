@@ -8148,7 +8148,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 26: Demo repository and smoke test
 
 **Files:**
-- Create (in a separate public repository `alonbrt/scan-review-demo`): `package.json`, `package-lock.json`, `src/config.js`, `src/util.js`, `README.md`, tags `v1` and `v2`
+- Create (in a separate public repository `b-alon/scan-review-demo`): `package.json`, `package-lock.json`, `src/config.js`, `src/util.js`, `README.md`, tags `v1` and `v2`
 - Create: `scripts/smoke.mjs`
 
 **Interfaces:**
@@ -8266,10 +8266,10 @@ module.exports = { evaluate, merge: _.merge };
 
 ```bash
 git add -A && git commit -m "v2: fixes" && git tag v2
-gh repo create alonbrt/scan-review-demo --public --source . --push --description "Deliberately vulnerable sample for the AI Scan Review demo"
+gh repo create b-alon/scan-review-demo --public --source . --push --description "Deliberately vulnerable sample for the AI Scan Review demo"
 git push --tags
 ```
-Expected: `https://github.com/alonbrt/scan-review-demo/tree/v1` and `/tree/v2` exist.
+Expected: `https://github.com/b-alon/scan-review-demo/tree/v1` and `/tree/v2` exist.
 
 - [ ] **Step 4: Write `scripts/smoke.mjs`**
 
@@ -8277,7 +8277,7 @@ Expected: `https://github.com/alonbrt/scan-review-demo/tree/v1` and `/tree/v2` e
 #!/usr/bin/env node
 // Smoke test against a running stack: scans the demo repo at v1 then v2 and checks the comparison.
 const base = process.env.SMOKE_BASE_URL ?? 'http://localhost:8080';
-const repo = process.env.SMOKE_REPO ?? 'https://github.com/alonbrt/scan-review-demo';
+const repo = process.env.SMOKE_REPO ?? 'https://github.com/b-alon/scan-review-demo';
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 180_000);
 
 async function json(url, init) {
@@ -8362,7 +8362,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
    docker compose up
    ```
    Open `http://localhost:8080`. State the only prerequisite (Docker running), that the first run builds the image, and the `APP_PORT` override.
-3. **Try it.** Scan `https://github.com/alonbrt/scan-review-demo/tree/v1`, read the result, then scan `/tree/v2` and look at "Since previous scan". Enabling the AI summary: copy `.env.example` to `.env`, set `ANTHROPIC_API_KEY`, `docker compose up -d`, then use "Scan again" (the freshness window reuses recent results for the same summarizer only, so a rescan after enabling the key runs fresh). Include the committed `server/test/fixtures/claude-summary.example.json` output in a collapsed block if it exists.
+3. **Try it.** Scan `https://github.com/b-alon/scan-review-demo/tree/v1`, read the result, then scan `/tree/v2` and look at "Since previous scan". Enabling the AI summary: copy `.env.example` to `.env`, set `ANTHROPIC_API_KEY`, `docker compose up -d`, then use "Scan again" (the freshness window reuses recent results for the same summarizer only, so a rescan after enabling the key runs fresh). Include the committed `server/test/fixtures/claude-summary.example.json` output in a collapsed block if it exists.
 4. **How it works.** An ASCII diagram of `browser -> api -> postgres <- worker`, the request flow in six numbered steps (submit, resolve ref, enqueue, worker stages, notify, stream), and the stage list with what each produces.
 5. **Decisions.** One short paragraph each: pg-boss over Redis (Postgres is the only dependency; retries, expiry and graceful stop come from the library), resolving refs at submit time (immediate errors, commit-keyed dedupe), SSE over polling and WebSocket (one-directional, native reconnect, polling backstop), the hybrid summarizer (same contract, zero-config default, AI when a key exists, fallback recorded), deterministic fingerprints (comparison survives line shifts), git over the GitHub API (any ref, no rate limits, private repos via a header), the freshness window and why it ignores results from a different summarizer.
 6. **Security considerations.** Secret values masked before storage; the token only in a git header, redacted from logs; limits on files, file size, packages and stage time; temp directories removed; no code is executed from scanned repositories; what is not stored.

@@ -1,0 +1,68 @@
+x-app-env: &app-env
+  DATABASE_URL: postgres://scan:scan@db:5432/scan
+  NODE_ENV: production
+  PORT: "8787"
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+  SCAN_FRESHNESS_MINUTES: ${SCAN_FRESHNESS_MINUTES:-10}
+
+x-app-healthcheck: &app-healthcheck
+  test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/ready"]
+  interval: 5s
+  timeout: 3s
+  retries: 20
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: scan
+      POSTGRES_PASSWORD: scan
+      POSTGRES_DB: scan
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scan -d scan"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: ai-scan-review
+    pull_policy: never
+    command: ["node", "server/dist/db/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://scan:scan@db:5432/scan
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    image: ai-scan-review
+    environment:
+      <<: *app-env
+      ROLE: api
+    ports:
+      - "${APP_PORT:-8787}:8787"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck: *app-healthcheck
+
+  worker:
+    image: ai-scan-review
+    pull_policy: never
+    environment:
+      <<: *app-env
+      ROLE: worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck: *app-healthcheck
+
+volumes:
+  dbdata:

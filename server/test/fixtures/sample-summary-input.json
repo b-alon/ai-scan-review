@@ -1,0 +1,112 @@
+{
+  "repo": {
+    "owner": "b-alon",
+    "name": "scan-review-demo",
+    "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "findings": [
+    {
+      "fingerprint": "code:code.eval:src/util.js:a1b2c3d4e5f6",
+      "category": "code",
+      "severity": "medium",
+      "ruleId": "code.eval",
+      "title": "Use of eval",
+      "description": "eval executes arbitrary code from a string. If any part of that string comes from input, it is remote code execution.",
+      "recommendation": "Replace eval at src/util.js:2 with JSON.parse, a safe expression parser, or explicit logic.",
+      "location": "src/util.js:2",
+      "referenceId": null,
+      "referenceUrl": null,
+      "evidence": "return eval(expr);",
+      "metadata": {
+        "line": 2,
+        "path": "src/util.js",
+        "whyItMatters": "If an attacker influences the evaluated string they can run code with the privileges of the application."
+      }
+    },
+    {
+      "fingerprint": "dep:npm:lodash:GHSA-p6mc-m468-83gw",
+      "category": "dependency",
+      "severity": "high",
+      "ruleId": "osv.advisory",
+      "title": "Prototype pollution (lodash@4.17.15)",
+      "description": "Versions of lodash before the fix are vulnerable to prototype pollution via merge and zipObjectDeep.",
+      "recommendation": "Upgrade lodash from 4.17.15 to 4.17.19 or later.",
+      "location": "lodash@4.17.15 (npm) in package-lock.json",
+      "referenceId": "GHSA-p6mc-m468-83gw",
+      "referenceUrl": "https://osv.dev/vulnerability/GHSA-p6mc-m468-83gw",
+      "evidence": null,
+      "metadata": {
+        "ecosystem": "npm",
+        "package": "lodash",
+        "version": "4.17.15",
+        "fixedVersion": "4.17.19"
+      }
+    },
+    {
+      "fingerprint": "code:secret.aws_access_key:src/config.js:1f2e3d4c5b6a",
+      "category": "code",
+      "severity": "critical",
+      "ruleId": "secret.aws_access_key",
+      "title": "AWS access key committed to the repository",
+      "description": "An AWS access key id is hardcoded in source. Anyone with read access to the repository can use it.",
+      "recommendation": "Rotate the AWS key found at src/config.js:3, remove it from the file, and load it from an environment variable or a secret manager.",
+      "location": "src/config.js:3",
+      "referenceId": null,
+      "referenceUrl": null,
+      "evidence": "accessKeyId: 'AKIA****',",
+      "metadata": {
+        "line": 3,
+        "path": "src/config.js",
+        "whyItMatters": "Anyone who can read this repository can act as your AWS account with whatever permissions this key has."
+      }
+    },
+    {
+      "fingerprint": "dep:npm:lodash:GHSA-35jh-r3h4-6jhm",
+      "category": "dependency",
+      "severity": "high",
+      "ruleId": "osv.advisory",
+      "title": "Prototype pollution (lodash@4.17.15)",
+      "description": "Versions of lodash before the fix are vulnerable to prototype pollution via merge and zipObjectDeep.",
+      "recommendation": "Upgrade lodash from 4.17.15 to 4.17.21 or later.",
+      "location": "lodash@4.17.15 (npm) in package-lock.json",
+      "referenceId": "GHSA-35jh-r3h4-6jhm",
+      "referenceUrl": "https://osv.dev/vulnerability/GHSA-35jh-r3h4-6jhm",
+      "evidence": null,
+      "metadata": {
+        "ecosystem": "npm",
+        "package": "lodash",
+        "version": "4.17.15",
+        "fixedVersion": "4.17.21"
+      }
+    },
+    {
+      "fingerprint": "dep:npm:left-pad:GHSA-nofix-0000-0000",
+      "category": "dependency",
+      "severity": "low",
+      "ruleId": "osv.advisory",
+      "title": "Regular expression denial of service (left-pad@1.0.0)",
+      "description": "Versions of lodash before the fix are vulnerable to prototype pollution via merge and zipObjectDeep.",
+      "recommendation": "No fixed version is published for lodash.",
+      "location": "left-pad@1.0.0 (npm) in package-lock.json",
+      "referenceId": "GHSA-nofix-0000-0000",
+      "referenceUrl": "https://osv.dev/vulnerability/GHSA-nofix-0000-0000",
+      "evidence": null,
+      "metadata": {
+        "ecosystem": "npm",
+        "package": "left-pad",
+        "version": "1.0.0",
+        "fixedVersion": null
+      }
+    }
+  ],
+  "warnings": [
+    {
+      "code": "no_lockfile",
+      "message": "services/api/package.json has no lockfile, so only exactly pinned versions were checked."
+    }
+  ],
+  "stats": {
+    "files": 120,
+    "packages": 40
+  }
+}
