@@ -1,5 +1,7 @@
 # AI Scan Review
 
+[![CI](https://github.com/b-alon/ai-scan-review/actions/workflows/ci.yml/badge.svg)](https://github.com/b-alon/ai-scan-review/actions/workflows/ci.yml)
+
 Connect a GitHub repository and get a security review that answers three questions: **what matters**, **what is risky**, and **what to do next**. Not a raw scanner report. Scan the same repository again later and the result shows what was fixed, what is new, and what is still open.
 
 ## Quick start
@@ -119,6 +121,8 @@ npm run test:integration                          # against the dev database
 npm run typecheck && npm run lint
 npm run smoke                                     # against a running stack
 ```
+
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit and integration tests against a Postgres service container, the build, and a Docker image build on every pull request and push to `main`. The smoke test stays manual because it depends on GitHub and OSV being reachable.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
