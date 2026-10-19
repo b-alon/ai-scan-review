@@ -1,0 +1,72 @@
+{
+  "summary": {
+    "riskLevel": "critical",
+    "headline": "Rotate the AWS access key committed in src/config.js today, then upgrade lodash to 4.17.21.",
+    "overview": "An AWS access key is committed in src/config.js. Anyone with access to the repository or its history can use it to reach your AWS account, run up costs, or read and alter data. Rotating the key matters more than deleting it from the file, because it stays in git history. lodash 4.17.15 has two prototype pollution flaws that can let crafted input change application behavior, and both are fixed by one upgrade. services/api/package.json has no lockfile, so only its exactly pinned versions were checked and vulnerable dependencies there may have been missed.",
+    "topRisks": [
+      {
+        "fingerprint": "code:secret.aws_access_key:src/config.js:1f2e3d4c5b6a",
+        "title": "AWS access key exposed in src/config.js",
+        "whyItMatters": "Anyone who can read the repo or its history can act as your AWS account. They could access or delete data, run up charges, or spin up infrastructure until the key is revoked."
+      },
+      {
+        "fingerprint": "dep:npm:lodash:GHSA-35jh-r3h4-6jhm",
+        "title": "Prototype pollution in lodash 4.17.15",
+        "whyItMatters": "Crafted input passed through lodash can modify shared object prototypes. This can break application logic, bypass checks, or in some setups lead to code execution."
+      },
+      {
+        "fingerprint": "dep:npm:lodash:GHSA-p6mc-m468-83gw",
+        "title": "Second prototype pollution flaw in lodash 4.17.15",
+        "whyItMatters": "This is a separate path to the same kind of tampering with object behavior. It is closed by the same lodash upgrade."
+      },
+      {
+        "fingerprint": "code:code.eval:src/util.js:a1b2c3d4e5f6",
+        "title": "eval in src/util.js",
+        "whyItMatters": "If any user-influenced data reaches this eval, an attacker could run arbitrary code inside your application."
+      },
+      {
+        "fingerprint": "dep:npm:left-pad:GHSA-nofix-0000-0000",
+        "title": "Denial-of-service risk in left-pad 1.0.0",
+        "whyItMatters": "Malicious input could tie up the CPU and slow or stall the service. No patched version exists, so the only fix is to replace the package."
+      }
+    ],
+    "nextActions": [
+      {
+        "action": "Revoke and rotate the AWS access key at src/config.js:3 in the AWS console. Check CloudTrail for misuse, remove the key from the file, and load it from an environment variable or a secret manager. Consider purging it from git history.",
+        "effort": "hours",
+        "resolves": [
+          "code:secret.aws_access_key:src/config.js:1f2e3d4c5b6a"
+        ]
+      },
+      {
+        "action": "Upgrade lodash from 4.17.15 to 4.17.21 or later and regenerate package-lock.json.",
+        "effort": "minutes",
+        "resolves": [
+          "dep:npm:lodash:GHSA-35jh-r3h4-6jhm",
+          "dep:npm:lodash:GHSA-p6mc-m468-83gw"
+        ]
+      },
+      {
+        "action": "Replace eval at src/util.js:2 with JSON.parse, a safe expression parser, or explicit logic.",
+        "effort": "hours",
+        "resolves": [
+          "code:code.eval:src/util.js:a1b2c3d4e5f6"
+        ]
+      },
+      {
+        "action": "Replace left-pad 1.0.0 with String.prototype.padStart and remove the dependency.",
+        "effort": "minutes",
+        "resolves": [
+          "dep:npm:left-pad:GHSA-nofix-0000-0000"
+        ]
+      },
+      {
+        "action": "Generate and commit a lockfile for services/api/package.json, then re-run the scan so its full dependency tree is checked.",
+        "effort": "minutes",
+        "resolves": []
+      }
+    ]
+  },
+  "mode": "claude",
+  "note": "model: claude-opus-5-5"
+}
