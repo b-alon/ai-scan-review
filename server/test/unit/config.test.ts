@@ -26,6 +26,11 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, ANTHROPIC_API_KEY: 'sk-ant-test' }).summarizerMode).toBe('claude');
   });
 
+  it('keeps the clone cache age above the longest possible scan', () => {
+    expect(loadConfig(base).SCAN_CACHE_MAX_AGE_HOURS).toBe(24);
+    expect(() => loadConfig({ ...base, SCAN_CACHE_MAX_AGE_HOURS: '0.5' })).toThrow(/SCAN_CACHE_MAX_AGE_HOURS/);
+  });
+
   it('coerces numbers and rejects bad values naming the variable', () => {
     expect(loadConfig({ ...base, PORT: '9090' }).PORT).toBe(9090);
     expect(() => loadConfig({ ...base, PORT: 'abc' })).toThrow(/PORT/);

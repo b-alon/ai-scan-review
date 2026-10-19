@@ -75,6 +75,36 @@ describe('clone cache', () => {
     expect((await readdir(path.dirname(entry))).filter((n) => n.includes('.tmp-'))).toEqual([]);
   });
 
+  it('serializes concurrent fetches of one commit so only one clone runs and nothing is deleted under a reader', async () => {
+    const calls: string[][] = [];
+    const slowGit: Exec = async (cmd, args, opts) => {
+      if (args.includes('fetch')) await new Promise((r) => setTimeout(r, 150));
+      return gitExec(calls)(cmd, args, opts);
+    };
+    const signal = new AbortController().signal;
+    const [a, b] = await Promise.all([
+      fetchRepo({ repoUrl: REPO, commitSha: SHA, exec: slowGit, signal, cacheDir }),
+      fetchRepo({ repoUrl: REPO, commitSha: SHA, exec: slowGit, signal, cacheDir }),
+    ]);
+    expect(a.dir).toBe(b.dir);
+    expect(calls.filter((c) => c.includes('fetch'))).toHaveLength(1);
+    expect([a.cached, b.cached].sort()).toEqual([false, true]);
+    expect(await exists(path.join(a.dir, READY_MARKER))).toBe(true);
+    const siblings = await readdir(path.dirname(a.dir));
+    expect(siblings).toEqual([SHA]);
+  });
+
+  it('breaks a stale lock left by a crashed worker', async () => {
+    const entry = cacheEntryPath(cacheDir, REPO, SHA);
+    await mkdir(`${entry}.lock`, { recursive: true });
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(`${entry}.lock`, old, old);
+    const calls: string[][] = [];
+    const result = await fetchRepo({ repoUrl: REPO, commitSha: SHA, exec: gitExec(calls), signal: new AbortController().signal, cacheDir, timeoutMs: 5000 });
+    expect(await exists(path.join(result.dir, READY_MARKER))).toBe(true);
+    expect(await exists(`${entry}.lock`)).toBe(false);
+  });
+
   it('sweeps entries and leftover temp directories older than the limit', async () => {
     const old = cacheEntryPath(cacheDir, REPO, 'a'.repeat(40));
     const fresh = cacheEntryPath(cacheDir, REPO, 'b'.repeat(40));

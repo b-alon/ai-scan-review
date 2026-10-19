@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rename, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ExecError, type Exec } from '../github/exec.js';
@@ -54,6 +54,38 @@ const isComplete = (dir: string): Promise<boolean> =>
     () => false,
   );
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One writer per cache entry, across every worker that shares the cache directory. `mkdir` without
+ * `recursive` is atomic on every filesystem we care about, so the lock directory is the mutex. A lock
+ * older than `staleMs` belongs to a worker that died mid-fetch and is taken over.
+ */
+async function withEntryLock<T>(entry: string, waitMs: number, staleMs: number, fn: () => Promise<T>): Promise<T> {
+  const lockDir = `${entry}.lock`;
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      await mkdir(lockDir);
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      const age = await stat(lockDir).then((s) => Date.now() - s.mtimeMs, () => 0);
+      if (age > staleMs) {
+        await rm(lockDir, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error('Timed out waiting for another worker to fetch this commit.');
+      await sleep(200);
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lockDir, { recursive: true, force: true });
+  }
+}
+
 async function cloneInto(dir: string, opts: FetchOptions, timeoutMs: number): Promise<string> {
   const env = gitEnv(opts.token);
   const deadline = Date.now() + timeoutMs;
@@ -84,40 +116,36 @@ async function fetchCached(opts: FetchOptions, cacheDir: string, timeoutMs: numb
   const entry = cacheEntryPath(cacheDir, opts.repoUrl, opts.commitSha);
   const keep = async (): Promise<void> => undefined;
 
-  if (await isComplete(entry)) {
+  const reuse = async (): Promise<FetchResult> => {
     const now = new Date();
     await utimes(entry, now, now).catch(() => undefined);
     return { dir: entry, commitSha: opts.commitSha, fileCount: await countFiles(entry), cached: true, cleanup: keep };
-  }
+  };
 
-  // Anything already at the entry path is an incomplete clone from a crashed attempt.
-  await rm(entry, { recursive: true, force: true });
+  if (await isComplete(entry)) return reuse();
   await mkdir(path.dirname(entry), { recursive: true });
-  const tmp = await mkdtemp(tempEntryPrefix(entry));
-  const discard = (): Promise<void> => rm(tmp, { recursive: true, force: true });
 
-  let commitSha: string;
-  try {
-    commitSha = await cloneInto(tmp, opts, timeoutMs);
-    await writeFile(path.join(tmp, READY_MARKER), `${commitSha}\n`);
-  } catch (err) {
-    await discard();
-    throw mapFetchError(err);
-  }
+  return withEntryLock(entry, timeoutMs, timeoutMs + 60_000, async () => {
+    // Another worker may have finished this commit while we waited for the lock.
+    if (await isComplete(entry)) return reuse();
 
-  try {
-    await rename(tmp, entry);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if ((code === 'EEXIST' || code === 'ENOTEMPTY') && (await isComplete(entry))) {
-      // Another worker finished the same commit first; its copy is identical.
+    // Under the lock, anything at the entry path is an incomplete clone from a crashed attempt:
+    // complete entries are only ever created by a lock holder, and readers only use complete ones.
+    await rm(entry, { recursive: true, force: true });
+    const tmp = await mkdtemp(tempEntryPrefix(entry));
+    const discard = (): Promise<void> => rm(tmp, { recursive: true, force: true });
+
+    let commitSha: string;
+    try {
+      commitSha = await cloneInto(tmp, opts, timeoutMs);
+      await writeFile(path.join(tmp, READY_MARKER), `${commitSha}\n`);
+      await rename(tmp, entry);
+    } catch (err) {
       await discard();
-    } else {
-      await discard();
-      throw err;
+      throw mapFetchError(err);
     }
-  }
-  return { dir: entry, commitSha, fileCount: await countFiles(entry), cached: false, cleanup: keep };
+    return { dir: entry, commitSha, fileCount: await countFiles(entry), cached: false, cleanup: keep };
+  });
 }
 
 export async function fetchRepo(opts: FetchOptions): Promise<FetchResult> {
