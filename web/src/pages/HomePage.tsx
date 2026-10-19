@@ -8,7 +8,6 @@ import type { ScanListItem } from '../types';
 export function HomePage() {
   const navigate = useNavigate();
   const [repoUrl, setRepoUrl] = useState('');
-  const [ref, setRef] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<ScanListItem[]>([]);
@@ -25,7 +24,7 @@ export function HomePage() {
     setBusy(true);
     setError(null);
     try {
-      const scan = await api.createScan(repoUrl, ref);
+      const scan = await api.createScan(repoUrl);
       navigate(`/scans/${scan.id}`, { state: { reused: scan.reused } });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -45,17 +44,11 @@ export function HomePage() {
           <Stack gap="md">
             <TextInput
               label="Repository URL"
-              placeholder="https://github.com/owner/repo"
+              description="Paste a repository URL, or a branch, tag, commit or pull request URL copied from GitHub. A bare repository URL scans the default branch."
+              placeholder="https://github.com/owner/repo/tree/main"
               value={repoUrl}
               onChange={(e) => setRepoUrl(e.currentTarget.value)}
               required
-              size="md"
-            />
-            <TextInput
-              label="Branch, tag or commit"
-              placeholder="default branch"
-              value={ref}
-              onChange={(e) => setRef(e.currentTarget.value)}
               size="md"
             />
             {error && <Alert color="red">{error}</Alert>}

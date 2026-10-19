@@ -20,7 +20,7 @@ Open <http://localhost:8787>. The first run builds the image and pulls Postgres,
 
 1. Scan `https://github.com/b-alon/scan-review-demo/tree/v1`. It has two vulnerable dependencies, a hardcoded AWS example key and an `eval` call. Watch the four stages run, then read the result.
 2. Scan `https://github.com/b-alon/scan-review-demo/tree/v2`, where all of that is fixed. The result now has a "Since previous scan" section listing what was fixed.
-3. Scan anything else, for example `https://github.com/expressjs/express/tree/4.17.1`. A branch, tag, commit or pull request URL all work, and the "Branch, tag or commit" field overrides whatever the URL implies.
+3. Scan anything else, for example `https://github.com/expressjs/express/tree/4.17.1`. One field takes any GitHub URL: a bare repository scans the default branch, and branch, tag, commit and pull request URLs copied from the address bar scan exactly that. The API also accepts a separate `ref` for programmatic use.
 
 ### Enabling the AI summary
 
