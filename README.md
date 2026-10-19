@@ -96,6 +96,7 @@ Stages, what they produce, and their limits:
 - SARIF export so findings land in GitHub code scanning.
 - OpenTelemetry traces and an error tracker, both env-var toggles once a backend exists.
 - A broker-backed queue only if throughput outgrows Postgres.
+- Resumable scans. A worker killed mid-scan loses only that attempt: pg-boss retries on a live worker, the handler resets and starts from the fetch, and cached advisory details are reused. That is the right trade at current scan sizes, measured in seconds. If scans grow to minutes, or add paid per-file steps, persist each stage's output and resume from the last completed stage instead of restarting.
 - Crash hygiene for clones: temp directories are removed in a `finally`, so a worker killed mid-scan (OOM, SIGKILL) leaves its clone on disk until the container is recreated. The fix is a dedicated scan directory the worker sweeps on startup and periodically, plus a `restart` policy on the api and worker services so a crashed worker comes back and sweeps on its own. The scan itself already recovers: pg-boss retries the job on a live worker with a fresh directory.
 
 ## How I used coding agents
